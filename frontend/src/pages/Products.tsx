@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { CrudPage, FieldDef } from "@/components/CrudPage";
-import { formatMoney } from "@/lib/format";
+import { formatDate, formatMoney } from "@/lib/format";
 import { numDefault, optNum, optStr, reqStr } from "@/lib/zh";
 import type { Product } from "@/types";
 
@@ -21,6 +21,38 @@ const defaults = {
   name: "", sku: "", category: "", unit_price: 0, currency: "INR",
   tax_rate: 0, stock_qty: "", is_active: true, description: "",
 };
+
+const productDefaultColumns = [
+  { key: "name", header: "Product", sortable: true, render: (p: Product) => <span className="font-medium">{p.name}</span> },
+  { key: "sku", header: "SKU" },
+  { key: "category", header: "Category", sortable: true },
+  { key: "unit_price", header: "Price", sortable: true, render: (p: Product) => formatMoney(p.unit_price, p.currency) },
+  { key: "tax_rate", header: "Tax %", render: (p: Product) => `${p.tax_rate}%` },
+  { key: "stock_qty", header: "Stock", render: (p: Product) => (p.stock_qty ?? "—") as any },
+  {
+    key: "is_active",
+    header: "Status",
+    render: (p: Product) => (
+      <span className={`badge ${p.is_active ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300" : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"}`}>
+        {p.is_active ? "Active" : "Inactive"}
+      </span>
+    ),
+  },
+];
+
+const productExtraColumns = [
+  { key: "currency", header: "Currency" },
+  {
+    key: "description",
+    header: "Description",
+    render: (p: Product) => (
+      <span className="block max-w-64 truncate" title={p.description ?? ""}>
+        {p.description || "—"}
+      </span>
+    ),
+  },
+  { key: "created_at", header: "Created", sortable: true, render: (p: Product) => formatDate(p.created_at) },
+];
 
 export default function Products() {
   const fields: FieldDef[] = [
@@ -51,23 +83,8 @@ export default function Products() {
         stock_qty: p.stock_qty ?? "",
       })}
       searchPlaceholder="Search products…"
-      columns={[
-        { key: "name", header: "Product", sortable: true, render: (p) => <span className="font-medium">{p.name}</span> },
-        { key: "sku", header: "SKU" },
-        { key: "category", header: "Category", sortable: true },
-        { key: "unit_price", header: "Price", sortable: true, render: (p) => formatMoney(p.unit_price, p.currency) },
-        { key: "tax_rate", header: "Tax %", render: (p) => `${p.tax_rate}%` },
-        { key: "stock_qty", header: "Stock", render: (p) => (p.stock_qty ?? "—") as any },
-        {
-          key: "is_active",
-          header: "Status",
-          render: (p) => (
-            <span className={`badge ${p.is_active ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300" : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"}`}>
-              {p.is_active ? "Active" : "Inactive"}
-            </span>
-          ),
-        },
-      ]}
+      columns={productDefaultColumns}
+      allColumns={[...productDefaultColumns, ...productExtraColumns]}
     />
   );
 }

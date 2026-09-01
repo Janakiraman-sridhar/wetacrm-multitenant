@@ -8,7 +8,7 @@ import { Modal } from "@/components/Modal";
 import { StatusBadge } from "@/components/ui";
 import { useToast } from "@/context/ToastContext";
 import { api, errorMessage } from "@/lib/api";
-import { formatDate, fullName } from "@/lib/format";
+import { formatDate, formatDateTime, fullName } from "@/lib/format";
 import { useSourceOptions, useUserOptions } from "@/lib/options";
 import { numDefault, optEmail, optStr, reqStr } from "@/lib/zh";
 import type { Lead } from "@/types";
@@ -46,6 +46,42 @@ function ScorePill({ score }: { score: number }) {
         : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300";
   return <span className={`badge ${tone}`}>{score}</span>;
 }
+
+const leadDefaultColumns = [
+  { key: "title", header: "Lead", sortable: true, render: (l: Lead) => <span className="font-medium">{l.title}</span> },
+  { key: "company_name", header: "Company" },
+  { key: "contact_name", header: "Contact" },
+  { key: "source", header: "Source", render: (l: Lead) => l.source?.name ?? "—" },
+  { key: "status", header: "Status", sortable: true, render: (l: Lead) => <StatusBadge value={l.status} /> },
+  { key: "score", header: "Score", sortable: true, render: (l: Lead) => <ScorePill score={l.score} /> },
+  { key: "assigned_to", header: "Assigned", render: (l: Lead) => fullName(l.assigned_to) },
+  { key: "created_at", header: "Created", sortable: true, render: (l: Lead) => formatDate(l.created_at) },
+];
+
+const leadExtraColumns = [
+  { key: "email", header: "Email", render: (l: Lead) => l.email || "—" },
+  { key: "phone", header: "Phone", render: (l: Lead) => l.phone || "—" },
+  { key: "follow_up_at", header: "Follow-up", render: (l: Lead) => formatDateTime(l.follow_up_at) },
+  {
+    key: "converted_deal_id",
+    header: "Converted to deal",
+    render: (l: Lead) =>
+      l.converted_deal_id ? (
+        <span className="badge bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">Yes</span>
+      ) : (
+        "—"
+      ),
+  },
+  {
+    key: "notes",
+    header: "Notes",
+    render: (l: Lead) => (
+      <span className="block max-w-64 truncate" title={l.notes ?? ""}>
+        {l.notes || "—"}
+      </span>
+    ),
+  },
+];
 
 export default function Leads() {
   const users = useUserOptions();
@@ -98,16 +134,8 @@ export default function Leads() {
           follow_up_at: l.follow_up_at ? l.follow_up_at.slice(0, 16) : "",
         })}
         searchPlaceholder="Search leads…"
-        columns={[
-          { key: "title", header: "Lead", sortable: true, render: (l) => <span className="font-medium">{l.title}</span> },
-          { key: "company_name", header: "Company" },
-          { key: "contact_name", header: "Contact" },
-          { key: "source", header: "Source", render: (l) => l.source?.name ?? "—" },
-          { key: "status", header: "Status", sortable: true, render: (l) => <StatusBadge value={l.status} /> },
-          { key: "score", header: "Score", sortable: true, render: (l) => <ScorePill score={l.score} /> },
-          { key: "assigned_to", header: "Assigned", render: (l) => fullName(l.assigned_to) },
-          { key: "created_at", header: "Created", sortable: true, render: (l) => formatDate(l.created_at) },
-        ]}
+        columns={leadDefaultColumns}
+        allColumns={[...leadDefaultColumns, ...leadExtraColumns]}
         rowActions={(lead) =>
           lead.status !== "converted" ? (
             <button

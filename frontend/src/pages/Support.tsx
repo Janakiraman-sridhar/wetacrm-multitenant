@@ -31,6 +31,37 @@ const STATUS = [
   { value: "closed", label: "Closed" },
 ];
 
+const ticketDefaultColumns = [
+  { key: "number", header: "#", sortable: true, render: (t: Ticket) => <span className="font-mono text-xs">{t.number}</span> },
+  { key: "subject", header: "Subject", sortable: true, render: (t: Ticket) => <span className="font-medium">{t.subject}</span> },
+  { key: "company", header: "Company", render: (t: Ticket) => t.company?.name ?? "—" },
+  { key: "priority", header: "Priority", sortable: true, render: (t: Ticket) => <StatusBadge value={t.priority} /> },
+  { key: "status", header: "Status", sortable: true, render: (t: Ticket) => <StatusBadge value={t.status} /> },
+  { key: "assigned_to", header: "Assigned", render: (t: Ticket) => fullName(t.assigned_to) },
+  { key: "created_at", header: "Created", sortable: true, render: (t: Ticket) => formatDate(t.created_at) },
+];
+
+const ticketExtraColumns = [
+  {
+    key: "description",
+    header: "Description",
+    render: (t: Ticket) => (
+      <span className="block max-w-64 truncate" title={t.description ?? ""}>
+        {t.description || "—"}
+      </span>
+    ),
+  },
+  {
+    key: "resolution",
+    header: "Resolution",
+    render: (t: Ticket) => (
+      <span className="block max-w-64 truncate" title={t.resolution ?? ""}>
+        {t.resolution || "—"}
+      </span>
+    ),
+  },
+];
+
 export default function Support() {
   const users = useUserOptions();
   const companies = useCompanyOptions();
@@ -64,15 +95,8 @@ export default function Support() {
         assigned_to_id: t.assigned_to_id ?? "",
       })}
       searchPlaceholder="Search tickets…"
-      columns={[
-        { key: "number", header: "#", sortable: true, render: (t) => <span className="font-mono text-xs">{t.number}</span> },
-        { key: "subject", header: "Subject", sortable: true, render: (t) => <span className="font-medium">{t.subject}</span> },
-        { key: "company", header: "Company", render: (t) => t.company?.name ?? "—" },
-        { key: "priority", header: "Priority", sortable: true, render: (t) => <StatusBadge value={t.priority} /> },
-        { key: "status", header: "Status", sortable: true, render: (t) => <StatusBadge value={t.status} /> },
-        { key: "assigned_to", header: "Assigned", render: (t) => fullName(t.assigned_to) },
-        { key: "created_at", header: "Created", sortable: true, render: (t) => formatDate(t.created_at) },
-      ]}
+      columns={ticketDefaultColumns}
+      allColumns={[...ticketDefaultColumns, ...ticketExtraColumns]}
     />
   );
 }

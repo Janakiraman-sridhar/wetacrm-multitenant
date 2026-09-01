@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 
 import { BillingForm, BillingFormValues, emptyBillingValues } from "@/components/BillingForm";
+import { useViewColumns } from "@/components/CrudPage";
 import { Column, DataTable } from "@/components/DataTable";
 import { ConfirmDialog, Modal } from "@/components/Modal";
 import { StatusBadge } from "@/components/ui";
@@ -28,6 +29,7 @@ export default function Quotations() {
   const queryClient = useQueryClient();
 
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Quotation | null>(null);
@@ -38,9 +40,9 @@ export default function Quotations() {
   const products = useProducts();
 
   const query = useQuery({
-    queryKey: ["/quotations", page, search],
+    queryKey: ["/quotations", page, pageSize, search],
     queryFn: async () =>
-      (await api.get<Page<Quotation>>("/quotations", { params: { page, page_size: 20, search: search || undefined, sort: "-created_at" } })).data,
+      (await api.get<Page<Quotation>>("/quotations", { params: { page, page_size: pageSize, search: search || undefined, sort: "-created_at" } })).data,
     placeholderData: keepPreviousData,
   });
 
@@ -149,11 +151,32 @@ export default function Quotations() {
     { key: "total", header: "Total", render: (q) => <span className="font-semibold">{formatMoney(q.total, q.currency)}</span> },
   ];
 
+  const extraColumns: Column<Quotation>[] = [
+    { key: "contact", header: "Contact", render: (q) => (q.contact ? `${q.contact.first_name} ${q.contact.last_name}`.trim() : "—") },
+    { key: "subtotal", header: "Subtotal", render: (q) => formatMoney(q.subtotal, q.currency) },
+    { key: "tax_total", header: "Tax", render: (q) => formatMoney(q.tax_total, q.currency) },
+    { key: "discount", header: "Discount", render: (q) => formatMoney(q.discount, q.currency) },
+    { key: "items", header: "Line items", render: (q) => `${q.items.length}` },
+    {
+      key: "notes",
+      header: "Notes",
+      render: (q) => (
+        <span className="block max-w-64 truncate" title={q.notes ?? ""}>
+          {q.notes || "—"}
+        </span>
+      ),
+    },
+    { key: "created_at", header: "Created", render: (q) => formatDate(q.created_at) },
+  ];
+
+  const { visibleColumns, viewsControl } = useViewColumns("quotations", columns, [...columns, ...extraColumns]);
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">Quotations</h1>
         <div className="flex items-center gap-2">
+          {viewsControl}
           <div className="relative">
             <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
@@ -176,12 +199,16 @@ export default function Quotations() {
 
       <DataTable<Quotation>
         fill
-        columns={columns}
+        columns={visibleColumns}
         rows={query.data?.items ?? []}
         total={query.data?.total ?? 0}
         page={page}
-        pageSize={20}
+        pageSize={pageSize}
         onPageChange={setPage}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setPage(1);
+        }}
         loading={query.isLoading}
         onRowClick={canWrite ? openEdit : undefined}
         actions={(q) => (

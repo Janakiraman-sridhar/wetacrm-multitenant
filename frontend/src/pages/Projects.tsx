@@ -31,6 +31,38 @@ const STATUS = [
   { value: "cancelled", label: "Cancelled" },
 ];
 
+const projectDefaultColumns = [
+  { key: "name", header: "Project", sortable: true, render: (p: Project) => <span className="font-medium">{p.name}</span> },
+  { key: "company", header: "Customer", render: (p: Project) => p.company?.name ?? "—" },
+  { key: "status", header: "Status", sortable: true, render: (p: Project) => <StatusBadge value={p.status} /> },
+  {
+    key: "tasks",
+    header: "Progress",
+    render: (p: Project) => {
+      const done = p.tasks.filter((t) => t.status === "done").length;
+      return p.tasks.length ? `${done}/${p.tasks.length} tasks` : "—";
+    },
+  },
+  { key: "budget", header: "Budget", render: (p: Project) => (p.budget != null ? formatMoney(p.budget) : "—") },
+  { key: "owner", header: "Owner", render: (p: Project) => fullName(p.owner) },
+  { key: "end_date", header: "Due", sortable: true, render: (p: Project) => formatDate(p.end_date) },
+];
+
+const projectExtraColumns = [
+  { key: "start_date", header: "Start date", render: (p: Project) => formatDate(p.start_date) },
+  { key: "team_ids", header: "Team size", render: (p: Project) => (p.team_ids?.length ? `${p.team_ids.length} members` : "—") },
+  {
+    key: "description",
+    header: "Description",
+    render: (p: Project) => (
+      <span className="block max-w-64 truncate" title={p.description ?? ""}>
+        {p.description || "—"}
+      </span>
+    ),
+  },
+  { key: "created_at", header: "Created", sortable: true, render: (p: Project) => formatDate(p.created_at) },
+];
+
 export default function Projects() {
   const users = useUserOptions();
   const companies = useCompanyOptions();
@@ -64,22 +96,8 @@ export default function Projects() {
         end_date: p.end_date ?? "",
       })}
       searchPlaceholder="Search projects…"
-      columns={[
-        { key: "name", header: "Project", sortable: true, render: (p) => <span className="font-medium">{p.name}</span> },
-        { key: "company", header: "Customer", render: (p) => p.company?.name ?? "—" },
-        { key: "status", header: "Status", sortable: true, render: (p) => <StatusBadge value={p.status} /> },
-        {
-          key: "tasks",
-          header: "Progress",
-          render: (p) => {
-            const done = p.tasks.filter((t) => t.status === "done").length;
-            return p.tasks.length ? `${done}/${p.tasks.length} tasks` : "—";
-          },
-        },
-        { key: "budget", header: "Budget", render: (p) => (p.budget != null ? formatMoney(p.budget) : "—") },
-        { key: "owner", header: "Owner", render: (p) => fullName(p.owner) },
-        { key: "end_date", header: "Due", sortable: true, render: (p) => formatDate(p.end_date) },
-      ]}
+      columns={projectDefaultColumns}
+      allColumns={[...projectDefaultColumns, ...projectExtraColumns]}
     />
   );
 }

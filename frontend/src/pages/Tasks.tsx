@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { CrudPage, FieldDef } from "@/components/CrudPage";
 import { StatusBadge } from "@/components/ui";
-import { formatDateTime, fullName } from "@/lib/format";
+import { formatDate, formatDateTime, fullName } from "@/lib/format";
 import { useUserOptions } from "@/lib/options";
 import { optStr, reqStr } from "@/lib/zh";
 import type { Task } from "@/types";
@@ -24,6 +24,33 @@ const STATUS = [
   { value: "in_progress", label: "In progress" },
   { value: "done", label: "Done" },
   { value: "cancelled", label: "Cancelled" },
+];
+
+const taskDefaultColumns = [
+  { key: "title", header: "Task", sortable: true, render: (t: Task) => <span className="font-medium">{t.title}</span> },
+  { key: "priority", header: "Priority", sortable: true, render: (t: Task) => <StatusBadge value={t.priority} /> },
+  { key: "status", header: "Status", sortable: true, render: (t: Task) => <StatusBadge value={t.status} /> },
+  { key: "due_date", header: "Due", sortable: true, render: (t: Task) => formatDateTime(t.due_date) },
+  { key: "assigned_to", header: "Assigned", render: (t: Task) => fullName(t.assigned_to) },
+  { key: "created_by", header: "Created by", render: (t: Task) => fullName(t.created_by) },
+];
+
+const taskExtraColumns = [
+  {
+    key: "description",
+    header: "Description",
+    render: (t: Task) => (
+      <span className="block max-w-64 truncate" title={t.description ?? ""}>
+        {t.description || "—"}
+      </span>
+    ),
+  },
+  {
+    key: "entity_type",
+    header: "Related to",
+    render: (t: Task) => (t.entity_type ? <span className="capitalize">{t.entity_type}</span> : "—"),
+  },
+  { key: "created_at", header: "Created", sortable: true, render: (t: Task) => formatDate(t.created_at) },
 ];
 
 export default function Tasks() {
@@ -53,14 +80,8 @@ export default function Tasks() {
         due_date: t.due_date ? t.due_date.slice(0, 16) : "",
       })}
       searchPlaceholder="Search tasks…"
-      columns={[
-        { key: "title", header: "Task", sortable: true, render: (t) => <span className="font-medium">{t.title}</span> },
-        { key: "priority", header: "Priority", sortable: true, render: (t) => <StatusBadge value={t.priority} /> },
-        { key: "status", header: "Status", sortable: true, render: (t) => <StatusBadge value={t.status} /> },
-        { key: "due_date", header: "Due", sortable: true, render: (t) => formatDateTime(t.due_date) },
-        { key: "assigned_to", header: "Assigned", render: (t) => fullName(t.assigned_to) },
-        { key: "created_by", header: "Created by", render: (t) => fullName(t.created_by) },
-      ]}
+      columns={taskDefaultColumns}
+      allColumns={[...taskDefaultColumns, ...taskExtraColumns]}
     />
   );
 }

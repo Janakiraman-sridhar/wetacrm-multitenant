@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { CrudPage, FieldDef } from "@/components/CrudPage";
-import { formatDate } from "@/lib/format";
+import { formatDate, fullName } from "@/lib/format";
 import { useCompanyOptions, useUserOptions } from "@/lib/options";
 import { optStr, reqStr } from "@/lib/zh";
 import type { Contact } from "@/types";
@@ -40,6 +40,57 @@ function toApi(values: any) {
     },
   };
 }
+
+const contactDefaultColumns = [
+  {
+    key: "first_name",
+    header: "Name",
+    sortable: true,
+    render: (c: Contact) => (
+      <span className="font-medium">
+        {c.first_name} {c.last_name}
+      </span>
+    ),
+  },
+  { key: "position", header: "Position" },
+  { key: "company", header: "Company", render: (c: Contact) => c.company?.name ?? "—" },
+  { key: "emails", header: "Email", render: (c: Contact) => c.emails?.[0] ?? "—" },
+  { key: "phones", header: "Phone", render: (c: Contact) => c.phones?.[0] ?? "—" },
+  { key: "created_at", header: "Created", sortable: true, render: (c: Contact) => formatDate(c.created_at) },
+];
+
+const contactExtraColumns = [
+  { key: "email_secondary", header: "Email (secondary)", render: (c: Contact) => c.emails?.[1] ?? "—" },
+  { key: "phone_secondary", header: "Phone (secondary)", render: (c: Contact) => c.phones?.[1] ?? "—" },
+  { key: "linkedin", header: "LinkedIn", render: (c: Contact) => c.social_links?.linkedin ?? "—" },
+  { key: "twitter", header: "X / Twitter", render: (c: Contact) => c.social_links?.twitter ?? "—" },
+  { key: "owner", header: "Owner", render: (c: Contact) => fullName(c.owner) },
+  {
+    key: "tags",
+    header: "Tags",
+    render: (c: Contact) =>
+      c.tags?.length ? (
+        <span className="flex max-w-52 flex-wrap gap-1">
+          {c.tags.map((t) => (
+            <span key={t} className="badge bg-primary-50 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
+              {t}
+            </span>
+          ))}
+        </span>
+      ) : (
+        "—"
+      ),
+  },
+  {
+    key: "notes",
+    header: "Notes",
+    render: (c: Contact) => (
+      <span className="block max-w-64 truncate" title={c.notes ?? ""}>
+        {c.notes || "—"}
+      </span>
+    ),
+  },
+];
 
 export default function Contacts() {
   const users = useUserOptions();
@@ -83,23 +134,8 @@ export default function Contacts() {
         owner_id: c.owner?.id ?? "",
       })}
       searchPlaceholder="Search contacts…"
-      columns={[
-        {
-          key: "first_name",
-          header: "Name",
-          sortable: true,
-          render: (c) => (
-            <span className="font-medium">
-              {c.first_name} {c.last_name}
-            </span>
-          ),
-        },
-        { key: "position", header: "Position" },
-        { key: "company", header: "Company", render: (c) => c.company?.name ?? "—" },
-        { key: "emails", header: "Email", render: (c) => c.emails?.[0] ?? "—" },
-        { key: "phones", header: "Phone", render: (c) => c.phones?.[0] ?? "—" },
-        { key: "created_at", header: "Created", sortable: true, render: (c) => formatDate(c.created_at) },
-      ]}
+      columns={contactDefaultColumns}
+      allColumns={[...contactDefaultColumns, ...contactExtraColumns]}
     />
   );
 }

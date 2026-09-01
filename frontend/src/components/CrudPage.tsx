@@ -363,6 +363,35 @@ function ViewsControl<T extends { id: string }>({
   );
 }
 
+/**
+ * Column-visibility state + the Views button for a module. Used by CrudPage and
+ * by custom list pages (Quotations, Invoices) so views behave identically everywhere.
+ */
+export function useViewColumns<T extends { id: string }>(
+  module: string,
+  columns: Column<T>[],
+  allColumns?: Column<T>[]
+) {
+  const [active, setActive] = useState<ViewSelection>("default");
+  const catalog = allColumns ?? columns;
+  const visibleColumns = useMemo(() => {
+    if (active === "default") return columns;
+    if (active === "all") return catalog;
+    return catalog.filter((c) => active.columns.includes(c.key));
+  }, [columns, catalog, active]);
+
+  const viewsControl = (
+    <ViewsControl
+      columns={catalog}
+      defaultCount={columns.length}
+      storageKey={`weta_views_${module}`}
+      active={active}
+      onActivate={setActive}
+    />
+  );
+  return { visibleColumns, viewsControl };
+}
+
 // --- generic CRUD page ----------------------------------------------------
 
 export interface CrudPageProps<T extends { id: string }> {
@@ -415,14 +444,7 @@ export function CrudPage<T extends { id: string }>({
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<T | null>(null);
   const [deleting, setDeleting] = useState<T | null>(null);
-  const [activeView, setActiveView] = useState<ViewSelection>("default");
-
-  const catalog = allColumns ?? columns;
-  const visibleColumns = useMemo(() => {
-    if (activeView === "default") return columns;
-    if (activeView === "all") return catalog;
-    return catalog.filter((c) => activeView.columns.includes(c.key));
-  }, [columns, catalog, activeView]);
+  const { visibleColumns, viewsControl } = useViewColumns(module, columns, allColumns);
 
   const params = useMemo(
     () => ({ page, page_size: pageSize, search: search || undefined, sort: sort || undefined, ...extraParams }),
@@ -482,13 +504,7 @@ export function CrudPage<T extends { id: string }>({
         <h1 className="text-xl font-semibold">{title}</h1>
         <div className="flex flex-wrap items-center gap-2">
           {toolbar}
-          <ViewsControl
-            columns={catalog}
-            defaultCount={columns.length}
-            storageKey={`weta_views_${module}`}
-            active={activeView}
-            onActivate={setActiveView}
-          />
+          {viewsControl}
           <div className="relative">
             <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input

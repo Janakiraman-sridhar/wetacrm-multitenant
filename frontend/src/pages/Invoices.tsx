@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 
 import { BillingForm, BillingFormValues, emptyBillingValues } from "@/components/BillingForm";
+import { useViewColumns } from "@/components/CrudPage";
 import { Column, DataTable } from "@/components/DataTable";
 import { ConfirmDialog, Modal } from "@/components/Modal";
 import { StatusBadge } from "@/components/ui";
@@ -21,6 +22,7 @@ export default function Invoices() {
   const queryClient = useQueryClient();
 
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Invoice | null>(null);
@@ -33,9 +35,9 @@ export default function Invoices() {
   const products = useProducts();
 
   const query = useQuery({
-    queryKey: ["/invoices", page, search],
+    queryKey: ["/invoices", page, pageSize, search],
     queryFn: async () =>
-      (await api.get<Page<Invoice>>("/invoices", { params: { page, page_size: 20, search: search || undefined, sort: "-created_at" } })).data,
+      (await api.get<Page<Invoice>>("/invoices", { params: { page, page_size: pageSize, search: search || undefined, sort: "-created_at" } })).data,
     placeholderData: keepPreviousData,
   });
 
@@ -137,11 +139,36 @@ export default function Invoices() {
     { key: "amount_paid", header: "Paid", render: (i) => formatMoney(i.amount_paid, i.currency) },
   ];
 
+  const extraColumns: Column<Invoice>[] = [
+    { key: "subtotal", header: "Subtotal", render: (i) => formatMoney(i.subtotal, i.currency) },
+    { key: "tax_total", header: "Tax", render: (i) => formatMoney(i.tax_total, i.currency) },
+    { key: "discount", header: "Discount", render: (i) => formatMoney(i.discount, i.currency) },
+    {
+      key: "outstanding",
+      header: "Outstanding",
+      render: (i) => formatMoney(Math.max(0, i.total - i.amount_paid), i.currency),
+    },
+    { key: "items", header: "Line items", render: (i) => `${i.items.length}` },
+    {
+      key: "notes",
+      header: "Notes",
+      render: (i) => (
+        <span className="block max-w-64 truncate" title={i.notes ?? ""}>
+          {i.notes || "—"}
+        </span>
+      ),
+    },
+    { key: "created_at", header: "Created", render: (i) => formatDate(i.created_at) },
+  ];
+
+  const { visibleColumns, viewsControl } = useViewColumns("invoices", columns, [...columns, ...extraColumns]);
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">Invoices</h1>
         <div className="flex items-center gap-2">
+          {viewsControl}
           <div className="relative">
             <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
@@ -164,12 +191,16 @@ export default function Invoices() {
 
       <DataTable<Invoice>
         fill
-        columns={columns}
+        columns={visibleColumns}
         rows={query.data?.items ?? []}
         total={query.data?.total ?? 0}
         page={page}
-        pageSize={20}
+        pageSize={pageSize}
         onPageChange={setPage}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setPage(1);
+        }}
         loading={query.isLoading}
         onRowClick={canWrite ? openEdit : undefined}
         actions={(inv) => (

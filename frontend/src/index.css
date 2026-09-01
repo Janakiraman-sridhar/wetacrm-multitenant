@@ -9,18 +9,18 @@
   body {
     @apply bg-slate-50 text-slate-800 dark:bg-slate-950 dark:text-slate-100;
   }
-  /* Slim, rounded scrollbars with a floating thumb (WebKit) */
+  /* Rounded scrollbars with a clearly visible floating thumb (WebKit) */
   ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: 12px;
+    height: 12px;
   }
   ::-webkit-scrollbar-thumb {
-    @apply rounded-full bg-slate-300 dark:bg-slate-700;
+    @apply rounded-full bg-slate-400 dark:bg-slate-600;
     border: 3px solid transparent;
     background-clip: content-box;
   }
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-slate-400 dark:bg-slate-500;
+    @apply bg-slate-500 dark:bg-slate-400;
     border-width: 2px;
     background-clip: content-box;
   }
@@ -31,10 +31,10 @@
   /* Firefox */
   * {
     scrollbar-width: thin;
-    scrollbar-color: rgb(203 213 225) transparent;
+    scrollbar-color: rgb(148 163 184) transparent;
   }
   .dark * {
-    scrollbar-color: rgb(51 65 85) transparent;
+    scrollbar-color: rgb(71 85 105) transparent;
   }
 }
 

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { Eye, Plus, Trash2, Upload } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ExternalLink, Loader2, Plus, Trash2, Upload } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Modal } from "@/components/Modal";
 import { Select } from "@/components/Select";
@@ -529,232 +529,390 @@ function RolesTab() {
   );
 }
 
-const LAYOUT_OPTIONS = [
-  { value: "modern", label: "Modern — colored header band" },
-  { value: "classic", label: "Classic — black & white, ruled" },
-  { value: "minimal", label: "Minimal — light lines only" },
-];
-
 const FONT_OPTIONS = [
   { value: "helvetica", label: "Helvetica (sans-serif)" },
   { value: "times", label: "Times (serif)" },
 ];
 
-function DocumentTemplateCard({
-  settingKey,
-  heading,
-  subtitle,
-  extraField,
-  canWrite,
-  stored,
-}: {
-  settingKey: string;
-  heading: string;
-  subtitle: string;
-  extraField: { key: string; label: string };
-  canWrite: boolean;
-  stored: Record<string, any>;
-}) {
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const [form, setForm] = useState<Record<string, any>>({});
-  const [previewing, setPreviewing] = useState(false);
-  const kind = settingKey.replace("_template", "");
+const ACCENT_PRESETS = ["#4F46E5", "#0E7490", "#059669", "#D97706", "#DC2626", "#7C3AED", "#0F172A"];
 
-  useEffect(() => {
-    setForm({
-      title: stored.title ?? "",
-      number_prefix: stored.number_prefix ?? "",
-      accent_color: stored.accent_color ?? "#4F46E5",
-      layout: stored.layout ?? "modern",
-      font: stored.font ?? "helvetica",
-      label_item: stored.label_item ?? "Item & Description",
-      label_quantity: stored.label_quantity ?? "Qty",
-      label_rate: stored.label_rate ?? "Rate",
-      label_tax: stored.label_tax ?? "Tax %",
-      label_amount: stored.label_amount ?? "Amount",
-      show_tax_column: stored.show_tax_column ?? true,
-      show_signature: stored.show_signature ?? true,
-      show_logo: stored.show_logo ?? true,
-      signature_label: stored.signature_label ?? "Authorized Signatory",
-      bank_details: stored.bank_details ?? "",
-      footer_note: stored.footer_note ?? "",
-      [extraField.key]: stored[extraField.key] ?? "",
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stored]);
+const TEMPLATE_DEFAULTS: Record<string, any> = {
+  title: "",
+  number_prefix: "",
+  accent_color: "#4F46E5",
+  layout: "modern",
+  font: "helvetica",
+  label_item: "Item & Description",
+  label_quantity: "Qty",
+  label_rate: "Rate",
+  label_tax: "Tax %",
+  label_amount: "Amount",
+  show_tax_column: true,
+  show_signature: true,
+  show_logo: true,
+  signature_label: "Authorized Signatory",
+  bank_details: "",
+  footer_note: "",
+};
 
-  const save = useMutation({
-    mutationFn: async () => (await api.put(`/settings/${settingKey}`, { value: form })).data,
-    onSuccess: () => {
-      toast(`${heading} saved`);
-      queryClient.invalidateQueries({ queryKey: ["settings"] });
-    },
-    onError: (err) => toast(errorMessage(err), "error"),
-  });
-
-  const set = (key: string, value: any) => setForm((f) => ({ ...f, [key]: value }));
-
-  const preview = async () => {
-    setPreviewing(true);
-    try {
-      const res = await fetch(`${API_URL}/api/v1/settings/document-preview/${kind}`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${tokenStore.access}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ value: form }),
-      });
-      if (!res.ok) throw new Error("preview failed");
-      const blob = await res.blob();
-      window.open(URL.createObjectURL(blob), "_blank");
-    } catch {
-      toast("Could not generate the preview", "error");
-    } finally {
-      setPreviewing(false);
-    }
+function templateForm(stored: Record<string, any>, extraKey: string): Record<string, any> {
+  return {
+    ...TEMPLATE_DEFAULTS,
+    ...Object.fromEntries(Object.entries(stored).filter(([, v]) => v !== undefined && v !== null)),
+    [extraKey]: stored[extraKey] ?? "",
   };
+}
 
-  const toggle = (key: string, label: string) => (
-    <label className="flex cursor-pointer items-center gap-2 text-sm">
-      <input
-        type="checkbox"
-        className="h-4 w-4 rounded accent-primary-600"
-        disabled={!canWrite}
-        checked={!!form[key]}
-        onChange={(e) => set(key, e.target.checked)}
-      />
+function DocSectionHeader({ title }: { title: string }) {
+  return (
+    <div className="flex items-center gap-3 pt-1">
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-primary-600 dark:text-primary-400">
+        {title}
+      </span>
+      <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
+    </div>
+  );
+}
+
+function Switch({
+  checked,
+  onChange,
+  disabled,
+  label,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+  label: string;
+}) {
+  return (
+    <label className={clsx("flex items-center justify-between gap-3 py-1 text-sm", disabled ? "opacity-60" : "cursor-pointer")}>
       {label}
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => onChange(!checked)}
+        className={clsx(
+          "relative h-5 w-9 shrink-0 rounded-full transition-colors",
+          checked ? "bg-primary-600" : "bg-slate-300 dark:bg-slate-700"
+        )}
+        role="switch"
+        aria-checked={checked}
+      >
+        <span
+          className={clsx(
+            "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all",
+            checked ? "left-[18px]" : "left-0.5"
+          )}
+        />
+      </button>
     </label>
   );
+}
 
+/** Miniature document thumbnails used as the layout picker. */
+function LayoutPicker({
+  value,
+  onChange,
+  accent,
+  disabled,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  accent: string;
+  disabled?: boolean;
+}) {
+  const safeAccent = /^#[0-9a-fA-F]{6}$/.test(accent) ? accent : "#4F46E5";
+  const options = [
+    { key: "modern", label: "Modern" },
+    { key: "classic", label: "Classic" },
+    { key: "minimal", label: "Minimal" },
+  ];
   return (
-    <div className="card p-5">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h2 className="font-semibold">{heading}</h2>
-          <p className="text-xs text-slate-400">{subtitle}</p>
-        </div>
-        <button className="btn-secondary !py-1.5" onClick={preview} disabled={previewing}>
-          <Eye size={14} /> {previewing ? "Rendering…" : "Preview PDF"}
-        </button>
-      </div>
-
-      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div>
-          <label className="label">Document title</label>
-          <input className="input" disabled={!canWrite} value={form.title ?? ""} onChange={(e) => set("title", e.target.value)} placeholder="e.g. TAX INVOICE" />
-        </div>
-        <div>
-          <label className="label">Number prefix</label>
-          <input className="input" disabled={!canWrite} value={form.number_prefix ?? ""} onChange={(e) => set("number_prefix", e.target.value)} placeholder="e.g. INV" />
-          <p className="mt-1 text-[11px] text-slate-400">
-            New documents will be numbered {form.number_prefix || "…"}-{new Date().getFullYear()}-0001
+    <div className="grid grid-cols-3 gap-2.5">
+      {options.map((opt) => (
+        <button
+          key={opt.key}
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange(opt.key)}
+          className={clsx(
+            "rounded-xl border p-2.5 transition-all",
+            value === opt.key
+              ? "border-primary-400 ring-2 ring-primary-500/30 dark:border-primary-600"
+              : "border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600"
+          )}
+        >
+          {/* mini document */}
+          <div className="rounded-md border border-slate-200 bg-white p-1.5 dark:border-slate-600 dark:bg-slate-800">
+            <div className="mb-1 flex items-center justify-between">
+              <span className="h-1.5 w-4 rounded-sm bg-slate-300 dark:bg-slate-500" />
+              <span className="h-1.5 w-6 rounded-sm" style={{ background: safeAccent }} />
+            </div>
+            {opt.key === "modern" && <div className="h-2 rounded-sm" style={{ background: safeAccent }} />}
+            {opt.key === "classic" && <div className="h-2 border-y-2 border-slate-700 dark:border-slate-300" />}
+            {opt.key === "minimal" && <div className="h-2 border-b-2" style={{ borderColor: safeAccent }} />}
+            <div className="mt-1 space-y-1">
+              <div className={clsx("h-1 rounded-sm", opt.key === "modern" ? "bg-slate-100 dark:bg-slate-700" : "bg-transparent")} />
+              <div className="h-px bg-slate-200 dark:bg-slate-600" />
+              <div className="h-px bg-slate-200 dark:bg-slate-600" />
+            </div>
+          </div>
+          <p className={clsx("mt-1.5 text-center text-xs font-medium", value === opt.key ? "text-primary-600 dark:text-primary-400" : "text-slate-500")}>
+            {opt.label}
           </p>
-        </div>
-        <div>
-          <label className="label">Layout</label>
-          <Select value={form.layout ?? "modern"} onChange={(v) => set("layout", v)} options={LAYOUT_OPTIONS} clearable={false} searchable={false} />
-        </div>
-        <div>
-          <label className="label">Font</label>
-          <Select value={form.font ?? "helvetica"} onChange={(v) => set("font", v)} options={FONT_OPTIONS} clearable={false} searchable={false} />
-        </div>
-        <div>
-          <label className="label">Accent color</label>
-          <div className="flex items-center gap-2">
-            <input
-              type="color"
-              className="h-9 w-12 cursor-pointer rounded-lg border border-slate-300 bg-white p-1 dark:border-slate-700 dark:bg-slate-900"
-              disabled={!canWrite}
-              value={/^#[0-9a-fA-F]{6}$/.test(form.accent_color ?? "") ? form.accent_color : "#4F46E5"}
-              onChange={(e) => set("accent_color", e.target.value)}
-            />
-            <input className="input flex-1" disabled={!canWrite} value={form.accent_color ?? ""} onChange={(e) => set("accent_color", e.target.value)} placeholder="#4F46E5" />
-          </div>
-        </div>
-        <div>
-          <label className="label">Signature label</label>
-          <input className="input" disabled={!canWrite} value={form.signature_label ?? ""} onChange={(e) => set("signature_label", e.target.value)} />
-        </div>
+        </button>
+      ))}
+    </div>
+  );
+}
 
-        <div className="sm:col-span-2">
-          <label className="label">Item table column labels</label>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-            {(
-              [
-                ["label_item", "Item"],
-                ["label_quantity", "Qty"],
-                ["label_rate", "Rate"],
-                ["label_tax", "Tax"],
-                ["label_amount", "Amount"],
-              ] as const
-            ).map(([key, ph]) => (
-              <input key={key} className="input !py-1.5 text-sm" disabled={!canWrite} placeholder={ph} value={form[key] ?? ""} onChange={(e) => set(key, e.target.value)} />
-            ))}
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-x-6 gap-y-2 sm:col-span-2">
-          {toggle("show_logo", "Show company logo")}
-          {toggle("show_tax_column", "Show tax column")}
-          {toggle("show_signature", "Show authorized-signatory block")}
-        </div>
-
-        <div className="sm:col-span-2">
-          <label className="label">Payment / bank details (printed above the signature area)</label>
-          <textarea rows={3} className="input font-mono text-xs" disabled={!canWrite} placeholder={"Bank: HDFC Bank\nA/c No: 1234567890\nIFSC: HDFC0001234"} value={form.bank_details ?? ""} onChange={(e) => set("bank_details", e.target.value)} />
-        </div>
-        <div>
-          <label className="label">{extraField.label}</label>
-          <textarea rows={2} className="input" disabled={!canWrite} value={form[extraField.key] ?? ""} onChange={(e) => set(extraField.key, e.target.value)} />
-        </div>
-        <div>
-          <label className="label">Footer note</label>
-          <textarea rows={2} className="input" disabled={!canWrite} value={form.footer_note ?? ""} onChange={(e) => set("footer_note", e.target.value)} />
-        </div>
-      </div>
-
-      {canWrite && (
-        <div className="mt-4 flex justify-end">
-          <button className="btn-primary" onClick={() => save.mutate()} disabled={save.isPending}>
-            {save.isPending ? "Saving…" : "Save template"}
-          </button>
-        </div>
-      )}
+function AccentPicker({ value, onChange, disabled }: { value: string; onChange: (v: string) => void; disabled?: boolean }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {ACCENT_PRESETS.map((c) => (
+        <button
+          key={c}
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange(c)}
+          className={clsx(
+            "h-7 w-7 rounded-full border-2 transition-transform hover:scale-110",
+            value.toLowerCase() === c.toLowerCase() ? "border-slate-700 dark:border-white" : "border-transparent"
+          )}
+          style={{ background: c }}
+          title={c}
+        />
+      ))}
+      <label className="relative ml-1 flex h-7 w-7 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-dashed border-slate-300 text-[10px] font-semibold text-slate-400 hover:border-slate-400 dark:border-slate-600">
+        +
+        <input
+          type="color"
+          className="absolute inset-0 cursor-pointer opacity-0"
+          disabled={disabled}
+          value={/^#[0-9a-fA-F]{6}$/.test(value) ? value : "#4F46E5"}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      </label>
+      <span className="text-xs uppercase tabular-nums text-slate-400">{value}</span>
     </div>
   );
 }
 
 function DocumentsTab({ canWrite }: { canWrite: boolean }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [kind, setKind] = useState<"quotation" | "invoice">("quotation");
+  const [forms, setForms] = useState<Record<string, Record<string, any>> | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
   const { data, isLoading } = useQuery({
     queryKey: ["settings"],
     queryFn: async () => (await api.get<AppSetting[]>("/settings")).data,
   });
 
-  if (isLoading) return <PageSpinner />;
-  const value = (key: string) => data?.find((s) => s.key === key)?.value ?? {};
+  const stored = useMemo(() => {
+    const value = (key: string) => data?.find((s) => s.key === key)?.value ?? {};
+    return {
+      quotation: value("quotation_template"),
+      invoice: value("invoice_template"),
+    };
+  }, [data]);
+
+  useEffect(() => {
+    if (data && !forms) {
+      setForms({
+        quotation: templateForm(stored.quotation, "default_terms"),
+        invoice: templateForm(stored.invoice, "default_notes"),
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
+
+  const form = forms?.[kind];
+  const extraKey = kind === "quotation" ? "default_terms" : "default_notes";
+  const extraLabel = kind === "quotation" ? "Default terms for new quotations" : "Default notes for new invoices";
+  const dirty = !!form && JSON.stringify(form) !== JSON.stringify(templateForm(stored[kind], extraKey));
+
+  const set = (key: string, value: any) =>
+    setForms((f) => (f ? { ...f, [kind]: { ...f[kind], [key]: value } } : f));
+
+  // Debounced live preview: re-render the sample PDF as settings change.
+  useEffect(() => {
+    if (!form) return;
+    let cancelled = false;
+    setPreviewLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/v1/settings/document-preview/${kind}`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${tokenStore.access}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ value: form }),
+        });
+        if (!res.ok) throw new Error();
+        const url = URL.createObjectURL(await res.blob());
+        if (!cancelled) {
+          setPreviewUrl((old) => {
+            if (old) URL.revokeObjectURL(old);
+            return url;
+          });
+        }
+      } catch {
+        /* keep the last good preview */
+      } finally {
+        if (!cancelled) setPreviewLoading(false);
+      }
+    }, 600);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(form), kind]);
+
+  const save = useMutation({
+    mutationFn: async () => (await api.put(`/settings/${kind}_template`, { value: form })).data,
+    onSuccess: () => {
+      toast(`${kind === "quotation" ? "Quotation" : "Invoice"} template saved`);
+      queryClient.invalidateQueries({ queryKey: ["settings"] });
+    },
+    onError: (err) => toast(errorMessage(err), "error"),
+  });
+
+  if (isLoading || !form) return <PageSpinner />;
 
   return (
-    <div className="grid max-w-6xl grid-cols-1 gap-4 xl:grid-cols-2">
-      <DocumentTemplateCard
-        settingKey="quotation_template"
-        heading="Quotation Template"
-        subtitle="Controls the quotation PDF and defaults for new quotations."
-        extraField={{ key: "default_terms", label: "Default terms (used when a quotation has none)" }}
-        canWrite={canWrite}
-        stored={value("quotation_template")}
-      />
-      <DocumentTemplateCard
-        settingKey="invoice_template"
-        heading="Invoice Template"
-        subtitle="Controls the invoice PDF and defaults for new invoices."
-        extraField={{ key: "default_notes", label: "Default notes (used when an invoice has none)" }}
-        canWrite={canWrite}
-        stored={value("invoice_template")}
-      />
-      <p className="text-xs text-slate-400 xl:col-span-2">
-        Company name, address, email and phone on the PDFs come from the Company tab. Changes apply to every PDF
-        generated after saving; number prefixes apply to newly created documents only.
-      </p>
+    <div className="space-y-4">
+      {/* Document switcher + save */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 dark:border-slate-700 dark:bg-slate-800">
+          {(["quotation", "invoice"] as const).map((k) => (
+            <button
+              key={k}
+              onClick={() => setKind(k)}
+              className={clsx(
+                "rounded-md px-4 py-1.5 text-sm font-medium capitalize transition-colors",
+                kind === k
+                  ? "bg-white text-primary-700 shadow-sm dark:bg-slate-900 dark:text-primary-300"
+                  : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+              )}
+            >
+              {k} template
+            </button>
+          ))}
+        </div>
+        {canWrite && (
+          <button className="btn-primary" onClick={() => save.mutate()} disabled={save.isPending || !dirty}>
+            {save.isPending ? "Saving…" : dirty ? "Save changes" : "Saved"}
+          </button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
+        {/* Editor */}
+        <div className="card space-y-5 self-start p-5">
+          <DocSectionHeader title="Style" />
+          <div>
+            <label className="label">Layout</label>
+            <LayoutPicker value={form.layout} onChange={(v) => set("layout", v)} accent={form.accent_color} disabled={!canWrite} />
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="label">Font</label>
+              <Select value={form.font} onChange={(v) => set("font", v)} options={FONT_OPTIONS} clearable={false} searchable={false} />
+            </div>
+            <div>
+              <label className="label">Accent color</label>
+              <AccentPicker value={form.accent_color} onChange={(v) => set("accent_color", v)} disabled={!canWrite} />
+            </div>
+          </div>
+
+          <DocSectionHeader title="Header" />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="label">Document title</label>
+              <input className="input" disabled={!canWrite} value={form.title} onChange={(e) => set("title", e.target.value)} placeholder={kind === "quotation" ? "QUOTATION" : "TAX INVOICE"} />
+            </div>
+            <div>
+              <label className="label">Number prefix</label>
+              <input className="input" disabled={!canWrite} value={form.number_prefix} onChange={(e) => set("number_prefix", e.target.value)} placeholder={kind === "quotation" ? "QT" : "INV"} />
+              <p className="mt-1 text-[11px] text-slate-400">
+                e.g. {(form.number_prefix || (kind === "quotation" ? "QT" : "INV")).toUpperCase()}-{new Date().getFullYear()}-0001 (new documents only)
+              </p>
+            </div>
+          </div>
+          <Switch label="Show company logo (uploaded in the Company tab)" checked={!!form.show_logo} onChange={(v) => set("show_logo", v)} disabled={!canWrite} />
+
+          <DocSectionHeader title="Item table" />
+          <div>
+            <label className="label">Column labels</label>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {(
+                [
+                  ["label_item", "Item"],
+                  ["label_quantity", "Qty"],
+                  ["label_rate", "Rate"],
+                  ["label_tax", "Tax"],
+                  ["label_amount", "Amount"],
+                ] as const
+              ).map(([key, ph]) => (
+                <input key={key} className="input !py-1.5 text-sm" disabled={!canWrite} placeholder={ph} value={form[key]} onChange={(e) => set(key, e.target.value)} />
+              ))}
+            </div>
+          </div>
+          <Switch label="Show tax column" checked={!!form.show_tax_column} onChange={(v) => set("show_tax_column", v)} disabled={!canWrite} />
+
+          <DocSectionHeader title="Footer" />
+          <div>
+            <label className="label">Payment / bank details</label>
+            <textarea rows={3} className="input font-mono text-xs" disabled={!canWrite} placeholder={"Bank: HDFC Bank\nA/c No: 1234567890\nIFSC: HDFC0001234"} value={form.bank_details} onChange={(e) => set("bank_details", e.target.value)} />
+          </div>
+          <Switch label="Show authorized-signatory block" checked={!!form.show_signature} onChange={(v) => set("show_signature", v)} disabled={!canWrite} />
+          {form.show_signature && (
+            <div>
+              <label className="label">Signature label</label>
+              <input className="input" disabled={!canWrite} value={form.signature_label} onChange={(e) => set("signature_label", e.target.value)} />
+            </div>
+          )}
+          <div>
+            <label className="label">Footer note</label>
+            <input className="input" disabled={!canWrite} value={form.footer_note} onChange={(e) => set("footer_note", e.target.value)} placeholder="Thank you for your business." />
+          </div>
+          <div>
+            <label className="label">{extraLabel}</label>
+            <textarea rows={2} className="input" disabled={!canWrite} value={form[extraKey]} onChange={(e) => set(extraKey, e.target.value)} />
+          </div>
+        </div>
+
+        {/* Live preview */}
+        <div className="card sticky top-0 flex h-[calc(100vh-220px)] min-h-[480px] flex-col self-start overflow-hidden">
+          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5 dark:border-slate-800">
+            <h3 className="flex items-center gap-2 text-sm font-semibold">
+              Live preview
+              {previewLoading && <Loader2 size={13} className="animate-spin text-primary-500" />}
+            </h3>
+            <button
+              className="btn-ghost !px-2 !py-1 text-xs text-slate-400 hover:text-primary-600"
+              onClick={() => previewUrl && window.open(previewUrl, "_blank")}
+              disabled={!previewUrl}
+              title="Open the preview in a new tab"
+            >
+              <ExternalLink size={13} /> Open
+            </button>
+          </div>
+          <div className="flex-1 bg-slate-100 dark:bg-slate-800">
+            {previewUrl ? (
+              <iframe title="Template preview" src={`${previewUrl}#toolbar=0&navpanes=0`} className="h-full w-full" />
+            ) : (
+              <div className="flex h-full items-center justify-center text-sm text-slate-400">Rendering preview…</div>
+            )}
+          </div>
+          <p className="border-t border-slate-200 px-4 py-2 text-[11px] text-slate-400 dark:border-slate-800">
+            Rendered with sample data and your unsaved changes — exactly what customers will receive.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

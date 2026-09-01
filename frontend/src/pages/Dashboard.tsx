@@ -2,59 +2,20 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Briefcase, CalendarClock, CalendarDays, CheckSquare, IndianRupee, Table2, Target, Trophy,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
   Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 
+import { DateRangePicker, PresetKey, presetRange } from "@/components/DateRangePicker";
 import { DrilldownModal, DrilldownTarget } from "@/components/DrilldownModal";
 import { Avatar, PageSpinner } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
-import { formatDateTime, formatMoney, timeAgo } from "@/lib/format";
+import { formatDate, formatDateTime, formatMoney, timeAgo } from "@/lib/format";
 
 const PIE_COLORS = ["#4F46E5", "#10B981", "#F59E0B", "#EF4444", "#0EA5E9", "#8B5CF6", "#EC4899", "#64748B"];
-
-// --- date range presets ---------------------------------------------------
-
-const PRESETS = [
-  { key: "today", label: "Today" },
-  { key: "7d", label: "Last 7 days" },
-  { key: "30d", label: "Last 30 days" },
-  { key: "month", label: "This month" },
-  { key: "quarter", label: "This quarter" },
-  { key: "year", label: "This year" },
-  { key: "12m", label: "Last 12 months" },
-  { key: "custom", label: "Custom range" },
-] as const;
-
-type PresetKey = (typeof PRESETS)[number]["key"];
-
-function iso(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function presetRange(preset: PresetKey): { start: string; end: string } {
-  const now = new Date();
-  const end = iso(now);
-  switch (preset) {
-    case "today":
-      return { start: end, end };
-    case "7d":
-      return { start: iso(new Date(now.getTime() - 6 * 86400000)), end };
-    case "30d":
-      return { start: iso(new Date(now.getTime() - 29 * 86400000)), end };
-    case "month":
-      return { start: iso(new Date(now.getFullYear(), now.getMonth(), 1)), end };
-    case "quarter":
-      return { start: iso(new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1)), end };
-    case "year":
-      return { start: iso(new Date(now.getFullYear(), 0, 1)), end };
-    default:
-      return { start: iso(new Date(now.getFullYear() - 1, now.getMonth(), now.getDate())), end };
-  }
-}
 
 function periodLabel(period: string, granularity: string): string {
   const d = new Date(granularity === "month" ? `${period}-01T00:00:00` : `${period}T00:00:00`);
@@ -126,14 +87,10 @@ function ChartCard({
 export default function Dashboard() {
   const { user } = useAuth();
   const [preset, setPreset] = useState<PresetKey>("12m");
-  const [customStart, setCustomStart] = useState(presetRange("30d").start);
-  const [customEnd, setCustomEnd] = useState(presetRange("30d").end);
+  const [range, setRange] = useState(() => presetRange("12m"));
   const [drilldown, setDrilldown] = useState<DrilldownTarget | null>(null);
 
-  const { start, end } = useMemo(
-    () => (preset === "custom" ? { start: customStart, end: customEnd } : presetRange(preset)),
-    [preset, customStart, customEnd]
-  );
+  const { start, end } = range;
 
   const { data, isLoading } = useQuery({
     queryKey: ["dashboard", start, end],
@@ -163,25 +120,18 @@ export default function Dashboard() {
         <div>
           <h1 className="text-xl font-semibold">Good day, {user?.first_name} 👋</h1>
           <p className="text-sm text-slate-400">
-            Showing {start} → {end}. Click any KPI or chart to inspect and export its data.
+            Showing {formatDate(start)} – {formatDate(end)} · click any KPI or chart to inspect and export its data.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <select className="input w-44" value={preset} onChange={(e) => setPreset(e.target.value as PresetKey)}>
-            {PRESETS.map((p) => (
-              <option key={p.key} value={p.key}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-          {preset === "custom" && (
-            <>
-              <input type="date" className="input w-40" value={customStart} max={customEnd} onChange={(e) => setCustomStart(e.target.value)} />
-              <span className="text-slate-400">→</span>
-              <input type="date" className="input w-40" value={customEnd} min={customStart} onChange={(e) => setCustomEnd(e.target.value)} />
-            </>
-          )}
-        </div>
+        <DateRangePicker
+          preset={preset}
+          start={start}
+          end={end}
+          onChange={(nextPreset, nextStart, nextEnd) => {
+            setPreset(nextPreset);
+            setRange({ start: nextStart, end: nextEnd });
+          }}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">

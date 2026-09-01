@@ -247,17 +247,16 @@ def dashboard(
 
 def _deal_rows(deals: list[Deal]) -> tuple[list[dict], list[dict]]:
     columns = [
-        {"key": "title", "label": "Deal"},
-        {"key": "company", "label": "Company"},
-        {"key": "stage", "label": "Stage"},
-        {"key": "status", "label": "Status"},
-        {"key": "value", "label": "Value"},
-        {"key": "currency", "label": "Currency"},
-        {"key": "probability", "label": "Probability %"},
-        {"key": "owner", "label": "Owner"},
-        {"key": "expected_close_date", "label": "Expected close"},
-        {"key": "closed_at", "label": "Closed at"},
-        {"key": "created_at", "label": "Created"},
+        {"key": "title", "label": "Deal", "type": "text"},
+        {"key": "company", "label": "Company", "type": "text"},
+        {"key": "stage", "label": "Stage", "type": "badge"},
+        {"key": "status", "label": "Status", "type": "badge"},
+        {"key": "value", "label": "Value", "type": "money"},
+        {"key": "probability", "label": "Prob. %", "type": "number"},
+        {"key": "owner", "label": "Owner", "type": "text"},
+        {"key": "expected_close_date", "label": "Expected close", "type": "date"},
+        {"key": "closed_at", "label": "Closed at", "type": "datetime"},
+        {"key": "created_at", "label": "Created", "type": "datetime"},
     ]
     rows = [
         {
@@ -280,15 +279,15 @@ def _deal_rows(deals: list[Deal]) -> tuple[list[dict], list[dict]]:
 
 def _lead_rows(leads: list[Lead], source_names: dict) -> tuple[list[dict], list[dict]]:
     columns = [
-        {"key": "title", "label": "Lead"},
-        {"key": "company_name", "label": "Company"},
-        {"key": "contact_name", "label": "Contact"},
-        {"key": "email", "label": "Email"},
-        {"key": "source", "label": "Source"},
-        {"key": "status", "label": "Status"},
-        {"key": "score", "label": "Score"},
-        {"key": "assigned_to", "label": "Assigned to"},
-        {"key": "created_at", "label": "Created"},
+        {"key": "title", "label": "Lead", "type": "text"},
+        {"key": "company_name", "label": "Company", "type": "text"},
+        {"key": "contact_name", "label": "Contact", "type": "text"},
+        {"key": "email", "label": "Email", "type": "text"},
+        {"key": "source", "label": "Source", "type": "text"},
+        {"key": "status", "label": "Status", "type": "badge"},
+        {"key": "score", "label": "Score", "type": "number"},
+        {"key": "assigned_to", "label": "Assigned to", "type": "text"},
+        {"key": "created_at", "label": "Created", "type": "datetime"},
     ]
     rows = [
         {
@@ -309,13 +308,13 @@ def _lead_rows(leads: list[Lead], source_names: dict) -> tuple[list[dict], list[
 
 def _task_rows(tasks: list[Task]) -> tuple[list[dict], list[dict]]:
     columns = [
-        {"key": "title", "label": "Task"},
-        {"key": "priority", "label": "Priority"},
-        {"key": "status", "label": "Status"},
-        {"key": "due_date", "label": "Due"},
-        {"key": "assigned_to", "label": "Assigned to"},
-        {"key": "created_by", "label": "Created by"},
-        {"key": "created_at", "label": "Created"},
+        {"key": "title", "label": "Task", "type": "text"},
+        {"key": "priority", "label": "Priority", "type": "badge"},
+        {"key": "status", "label": "Status", "type": "badge"},
+        {"key": "due_date", "label": "Due", "type": "datetime"},
+        {"key": "assigned_to", "label": "Assigned to", "type": "text"},
+        {"key": "created_by", "label": "Created by", "type": "text"},
+        {"key": "created_at", "label": "Created", "type": "datetime"},
     ]
     rows = [
         {
@@ -370,11 +369,11 @@ def dashboard_drilldown(
         title = "Tasks created"
     elif metric in ("meetings", "upcoming_meetings"):
         columns = [
-            {"key": "title", "label": "Meeting"},
-            {"key": "starts_at", "label": "Starts"},
-            {"key": "ends_at", "label": "Ends"},
-            {"key": "location", "label": "Location"},
-            {"key": "organizer", "label": "Organizer"},
+            {"key": "title", "label": "Meeting", "type": "text"},
+            {"key": "starts_at", "label": "Starts", "type": "datetime"},
+            {"key": "ends_at", "label": "Ends", "type": "datetime"},
+            {"key": "location", "label": "Location", "type": "text"},
+            {"key": "organizer", "label": "Organizer", "type": "text"},
         ]
         rows = [
             {
@@ -389,11 +388,11 @@ def dashboard_drilldown(
         title = "Meetings"
     elif metric == "recent_activities":
         columns = [
-            {"key": "title", "label": "Activity"},
-            {"key": "type", "label": "Type"},
-            {"key": "entity_type", "label": "Related to"},
-            {"key": "user", "label": "By"},
-            {"key": "created_at", "label": "When"},
+            {"key": "title", "label": "Activity", "type": "text"},
+            {"key": "type", "label": "Type", "type": "badge"},
+            {"key": "entity_type", "label": "Related to", "type": "text"},
+            {"key": "user", "label": "By", "type": "text"},
+            {"key": "created_at", "label": "When", "type": "datetime"},
         ]
         rows = [
             {

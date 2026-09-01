@@ -14,7 +14,7 @@ from app.core.schemas import Message, Page
 from app.database.session import get_db
 from app.invoices.models import INVOICE_STATUSES, Invoice, InvoiceItem
 from app.invoices.schemas import InvoiceCreate, InvoiceOut, InvoiceUpdate, PaymentIn
-from app.services import billing
+from app.services import billing, storage
 from app.services.numbering import next_number
 from app.services.pdf import document_pdf
 from app.settings.models import Setting
@@ -98,11 +98,14 @@ def invoice_pdf(invoice_id: str, db: Session = Depends(get_db)):
     invoice = get_or_404(db, Invoice, invoice_id, "Invoice")
     profile_row = db.scalar(select(Setting).where(Setting.key == "company_profile"))
     template_row = db.scalar(select(Setting).where(Setting.key == "invoice_template"))
-    pdf = document_pdf(
-        "invoice", invoice,
-        profile_row.value if profile_row else {},
-        template_row.value if template_row else {},
-    )
+    profile = profile_row.value if profile_row else {}
+    logo = None
+    if profile.get("logo_key"):
+        try:
+            logo = storage.read_file(profile["logo_key"])
+        except Exception:
+            logo = None
+    pdf = document_pdf("invoice", invoice, profile, template_row.value if template_row else {}, logo)
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="{invoice.number}.pdf"'})
 

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -9,6 +9,8 @@ from app.core.deps import require_perm
 from app.core.exceptions import AppError
 from app.core.schemas import Message
 from app.database.session import get_db
+from app.services import storage
+from app.services.pdf import document_pdf, sample_document
 from app.settings.models import EmailTemplate, Setting, Tag
 from app.settings.schemas import (
     EmailTemplateOut, EmailTemplateUpdate, SettingOut, SettingUpdate, TagCreate, TagOut,
@@ -50,6 +52,88 @@ def system_status():
         "minio_configured": bool(app_config.minio_endpoint and app_config.minio_access_key),
         "database": "postgresql" if app_config.database_url.startswith("postgres") else "sqlite",
     }
+
+
+# --- Company logo (used on quotation/invoice PDFs) ---
+
+MAX_LOGO_BYTES = 2 * 1024 * 1024
+LOGO_TYPES = {"image/png", "image/jpeg", "image/webp"}
+
+
+def _profile_row(db: Session) -> Setting:
+    row = db.scalar(select(Setting).where(Setting.key == "company_profile"))
+    if row is None:
+        row = Setting(key="company_profile", value={})
+        db.add(row)
+        db.flush()
+    return row
+
+
+@router.post("/company-logo", response_model=Message)
+async def upload_company_logo(file: UploadFile, db: Session = Depends(get_db), user: User = Depends(require_perm("settings:write"))):
+    if file.content_type not in LOGO_TYPES:
+        raise AppError("Logo must be a PNG, JPEG or WebP image", 400)
+    data = await file.read()
+    if len(data) > MAX_LOGO_BYTES:
+        raise AppError("Logo exceeds the 2 MB limit", 413)
+    row = _profile_row(db)
+    old_key = (row.value or {}).get("logo_key")
+    key = storage.save_file(data, file.filename or "logo", file.content_type)
+    row.value = {**(row.value or {}), "logo_key": key}
+    if old_key:
+        storage.delete_file(old_key)
+    audit(db, user.id, "update", "setting", "company_logo")
+    db.commit()
+    return {"detail": "Logo uploaded"}
+
+
+@router.get("/company-logo")
+def get_company_logo(db: Session = Depends(get_db), _: User = Depends(require_perm("settings:read"))):
+    row = db.scalar(select(Setting).where(Setting.key == "company_profile"))
+    key = (row.value if row else {}).get("logo_key")
+    if not key:
+        raise AppError("No logo uploaded", 404)
+    try:
+        data = storage.read_file(key)
+    except Exception:
+        raise AppError("No logo uploaded", 404)
+    return Response(content=data, media_type="image/png")
+
+
+@router.delete("/company-logo", response_model=Message)
+def delete_company_logo(db: Session = Depends(get_db), user: User = Depends(require_perm("settings:write"))):
+    row = _profile_row(db)
+    key = (row.value or {}).get("logo_key")
+    if key:
+        storage.delete_file(key)
+        row.value = {k: v for k, v in (row.value or {}).items() if k != "logo_key"}
+        audit(db, user.id, "update", "setting", "company_logo")
+        db.commit()
+    return {"detail": "Logo removed"}
+
+
+# --- Live PDF preview for the document template editors ---
+
+@router.post("/document-preview/{kind}")
+def document_template_preview(
+    kind: str,
+    payload: SettingUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_perm("settings:read")),
+):
+    if kind not in ("quotation", "invoice"):
+        raise AppError("kind must be 'quotation' or 'invoice'", 400)
+    profile_row = db.scalar(select(Setting).where(Setting.key == "company_profile"))
+    profile = profile_row.value if profile_row else {}
+    logo_bytes = None
+    if profile.get("logo_key"):
+        try:
+            logo_bytes = storage.read_file(profile["logo_key"])
+        except Exception:
+            logo_bytes = None
+    pdf = document_pdf(kind, sample_document(kind), profile, payload.value, logo_bytes)
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{kind}-preview.pdf"'})
 
 
 # --- Email templates ---

@@ -1,13 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { Plus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Eye, Plus, Trash2, Upload } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import { Modal } from "@/components/Modal";
+import { Select } from "@/components/Select";
 import { Avatar, PageSpinner, StatusBadge } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { api, errorMessage } from "@/lib/api";
+import { API_URL, api, errorMessage, tokenStore } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import type { AppSetting, EmailTemplate, Page, Role, User } from "@/types";
 
@@ -43,6 +44,100 @@ export default function SettingsPage() {
       {tab === "Documents" && <DocumentsTab canWrite={hasPerm("settings:write")} />}
       {tab === "Email Templates" && <TemplatesTab canWrite={hasPerm("settings:write")} />}
       {tab === "System" && <SystemTab />}
+    </div>
+  );
+}
+
+function CompanyLogo({ canWrite }: { canWrite: boolean }) {
+  const { toast } = useToast();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const loadLogo = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/v1/settings/company-logo`, {
+        headers: { Authorization: `Bearer ${tokenStore.access}` },
+      });
+      if (!res.ok) {
+        setLogoUrl(null);
+        return;
+      }
+      setLogoUrl(URL.createObjectURL(await res.blob()));
+    } catch {
+      setLogoUrl(null);
+    }
+  };
+
+  useEffect(() => {
+    loadLogo();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const upload = async (file: File) => {
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      await api.post("/settings/company-logo", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      toast("Logo uploaded");
+      await loadLogo();
+    } catch (err) {
+      toast(errorMessage(err), "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    setBusy(true);
+    try {
+      await api.delete("/settings/company-logo");
+      setLogoUrl(null);
+      toast("Logo removed");
+    } catch (err) {
+      toast(errorMessage(err), "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-5 border-t border-slate-100 pt-4 dark:border-slate-800">
+      <label className="label">Company logo</label>
+      <div className="flex flex-wrap items-center gap-4">
+        {logoUrl ? (
+          <img src={logoUrl} alt="Company logo" className="h-16 max-w-48 rounded-lg border border-slate-200 bg-white object-contain p-1.5 dark:border-slate-700" />
+        ) : (
+          <div className="flex h-16 w-32 items-center justify-center rounded-lg border border-dashed border-slate-300 text-xs text-slate-400 dark:border-slate-700">
+            No logo yet
+          </div>
+        )}
+        {canWrite && (
+          <div className="flex gap-2">
+            <button className="btn-secondary" disabled={busy} onClick={() => fileRef.current?.click()}>
+              <Upload size={15} /> {logoUrl ? "Replace" : "Upload"}
+            </button>
+            {logoUrl && (
+              <button className="btn-ghost text-red-500" disabled={busy} onClick={remove}>
+                <Trash2 size={15} /> Remove
+              </button>
+            )}
+          </div>
+        )}
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) upload(f);
+            e.target.value = "";
+          }}
+        />
+      </div>
+      <p className="mt-1.5 text-xs text-slate-400">Shown on quotation and invoice PDFs. PNG, JPEG or WebP, up to 2 MB.</p>
     </div>
   );
 }
@@ -107,6 +202,7 @@ function CompanyProfileTab({ canWrite }: { canWrite: boolean }) {
           </button>
         </div>
       )}
+      <CompanyLogo canWrite={canWrite} />
       <p className="mt-4 text-xs text-slate-400">
         This information appears on quotation and invoice PDFs.
       </p>
@@ -433,6 +529,17 @@ function RolesTab() {
   );
 }
 
+const LAYOUT_OPTIONS = [
+  { value: "modern", label: "Modern — colored header band" },
+  { value: "classic", label: "Classic — black & white, ruled" },
+  { value: "minimal", label: "Minimal — light lines only" },
+];
+
+const FONT_OPTIONS = [
+  { value: "helvetica", label: "Helvetica (sans-serif)" },
+  { value: "times", label: "Times (serif)" },
+];
+
 function DocumentTemplateCard({
   settingKey,
   heading,
@@ -450,13 +557,27 @@ function DocumentTemplateCard({
 }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [form, setForm] = useState<Record<string, string>>({});
+  const [form, setForm] = useState<Record<string, any>>({});
+  const [previewing, setPreviewing] = useState(false);
+  const kind = settingKey.replace("_template", "");
 
   useEffect(() => {
     setForm({
       title: stored.title ?? "",
       number_prefix: stored.number_prefix ?? "",
       accent_color: stored.accent_color ?? "#4F46E5",
+      layout: stored.layout ?? "modern",
+      font: stored.font ?? "helvetica",
+      label_item: stored.label_item ?? "Item & Description",
+      label_quantity: stored.label_quantity ?? "Qty",
+      label_rate: stored.label_rate ?? "Rate",
+      label_tax: stored.label_tax ?? "Tax %",
+      label_amount: stored.label_amount ?? "Amount",
+      show_tax_column: stored.show_tax_column ?? true,
+      show_signature: stored.show_signature ?? true,
+      show_logo: stored.show_logo ?? true,
+      signature_label: stored.signature_label ?? "Authorized Signatory",
+      bank_details: stored.bank_details ?? "",
       footer_note: stored.footer_note ?? "",
       [extraField.key]: stored[extraField.key] ?? "",
     });
@@ -472,13 +593,52 @@ function DocumentTemplateCard({
     onError: (err) => toast(errorMessage(err), "error"),
   });
 
-  const set = (key: string, value: string) => setForm((f) => ({ ...f, [key]: value }));
+  const set = (key: string, value: any) => setForm((f) => ({ ...f, [key]: value }));
+
+  const preview = async () => {
+    setPreviewing(true);
+    try {
+      const res = await fetch(`${API_URL}/api/v1/settings/document-preview/${kind}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tokenStore.access}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ value: form }),
+      });
+      if (!res.ok) throw new Error("preview failed");
+      const blob = await res.blob();
+      window.open(URL.createObjectURL(blob), "_blank");
+    } catch {
+      toast("Could not generate the preview", "error");
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
+  const toggle = (key: string, label: string) => (
+    <label className="flex cursor-pointer items-center gap-2 text-sm">
+      <input
+        type="checkbox"
+        className="h-4 w-4 rounded accent-primary-600"
+        disabled={!canWrite}
+        checked={!!form[key]}
+        onChange={(e) => set(key, e.target.checked)}
+      />
+      {label}
+    </label>
+  );
 
   return (
     <div className="card p-5">
-      <h2 className="font-semibold">{heading}</h2>
-      <p className="mb-4 text-xs text-slate-400">{subtitle}</p>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 className="font-semibold">{heading}</h2>
+          <p className="text-xs text-slate-400">{subtitle}</p>
+        </div>
+        <button className="btn-secondary !py-1.5" onClick={preview} disabled={previewing}>
+          <Eye size={14} /> {previewing ? "Rendering…" : "Preview PDF"}
+        </button>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <label className="label">Document title</label>
           <input className="input" disabled={!canWrite} value={form.title ?? ""} onChange={(e) => set("title", e.target.value)} placeholder="e.g. TAX INVOICE" />
@@ -486,7 +646,17 @@ function DocumentTemplateCard({
         <div>
           <label className="label">Number prefix</label>
           <input className="input" disabled={!canWrite} value={form.number_prefix ?? ""} onChange={(e) => set("number_prefix", e.target.value)} placeholder="e.g. INV" />
-          <p className="mt-1 text-[11px] text-slate-400">New documents will be numbered {form.number_prefix || "…"}-{new Date().getFullYear()}-0001</p>
+          <p className="mt-1 text-[11px] text-slate-400">
+            New documents will be numbered {form.number_prefix || "…"}-{new Date().getFullYear()}-0001
+          </p>
+        </div>
+        <div>
+          <label className="label">Layout</label>
+          <Select value={form.layout ?? "modern"} onChange={(v) => set("layout", v)} options={LAYOUT_OPTIONS} clearable={false} searchable={false} />
+        </div>
+        <div>
+          <label className="label">Font</label>
+          <Select value={form.font ?? "helvetica"} onChange={(v) => set("font", v)} options={FONT_OPTIONS} clearable={false} searchable={false} />
         </div>
         <div>
           <label className="label">Accent color</label>
@@ -502,14 +672,47 @@ function DocumentTemplateCard({
           </div>
         </div>
         <div>
+          <label className="label">Signature label</label>
+          <input className="input" disabled={!canWrite} value={form.signature_label ?? ""} onChange={(e) => set("signature_label", e.target.value)} />
+        </div>
+
+        <div className="sm:col-span-2">
+          <label className="label">Item table column labels</label>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+            {(
+              [
+                ["label_item", "Item"],
+                ["label_quantity", "Qty"],
+                ["label_rate", "Rate"],
+                ["label_tax", "Tax"],
+                ["label_amount", "Amount"],
+              ] as const
+            ).map(([key, ph]) => (
+              <input key={key} className="input !py-1.5 text-sm" disabled={!canWrite} placeholder={ph} value={form[key] ?? ""} onChange={(e) => set(key, e.target.value)} />
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-x-6 gap-y-2 sm:col-span-2">
+          {toggle("show_logo", "Show company logo")}
+          {toggle("show_tax_column", "Show tax column")}
+          {toggle("show_signature", "Show authorized-signatory block")}
+        </div>
+
+        <div className="sm:col-span-2">
+          <label className="label">Payment / bank details (printed above the signature area)</label>
+          <textarea rows={3} className="input font-mono text-xs" disabled={!canWrite} placeholder={"Bank: HDFC Bank\nA/c No: 1234567890\nIFSC: HDFC0001234"} value={form.bank_details ?? ""} onChange={(e) => set("bank_details", e.target.value)} />
+        </div>
+        <div>
           <label className="label">{extraField.label}</label>
           <textarea rows={2} className="input" disabled={!canWrite} value={form[extraField.key] ?? ""} onChange={(e) => set(extraField.key, e.target.value)} />
         </div>
-        <div className="sm:col-span-2">
-          <label className="label">Footer note (shown at the bottom of the PDF)</label>
+        <div>
+          <label className="label">Footer note</label>
           <textarea rows={2} className="input" disabled={!canWrite} value={form.footer_note ?? ""} onChange={(e) => set("footer_note", e.target.value)} />
         </div>
       </div>
+
       {canWrite && (
         <div className="mt-4 flex justify-end">
           <button className="btn-primary" onClick={() => save.mutate()} disabled={save.isPending}>

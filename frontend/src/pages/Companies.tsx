@@ -47,6 +47,71 @@ export default function Companies() {
     { name: "notes", label: "Notes", type: "textarea", colSpan: 2, section: "Additional", placeholder: "Anything the team should know about this account…" },
   ];
 
+  const defaultColumns = [
+    { key: "name", header: "Name", sortable: true, render: (c: Company) => <span className="font-medium">{c.name}</span> },
+    { key: "industry", header: "Industry", sortable: true },
+    { key: "city", header: "City" },
+    { key: "website", header: "Website", render: (c: Company) => c.website || "—" },
+    {
+      key: "owner",
+      header: "Manager",
+      render: (c: Company) =>
+        c.owner ? (
+          <span className="flex items-center gap-2">
+            <Avatar first={c.owner.first_name} last={c.owner.last_name} size={22} />
+            {fullName(c.owner)}
+          </span>
+        ) : (
+          "—"
+        ),
+    },
+    { key: "created_at", header: "Created", sortable: true, render: (c: Company) => formatDate(c.created_at) },
+  ];
+
+  // Every remaining company field, selectable when building a custom view.
+  const extraColumns = [
+    { key: "email", header: "Email", render: (c: Company) => c.email || "—" },
+    { key: "phone", header: "Phone", render: (c: Company) => c.phone || "—" },
+    { key: "gst_number", header: "GST number", render: (c: Company) => c.gst_number || "—" },
+    {
+      key: "address",
+      header: "Street address",
+      render: (c: Company) => (
+        <span className="block max-w-52 truncate" title={c.address ?? ""}>
+          {c.address || "—"}
+        </span>
+      ),
+    },
+    { key: "state", header: "State" },
+    { key: "country", header: "Country" },
+    { key: "postal_code", header: "Postal code" },
+    {
+      key: "tags",
+      header: "Tags",
+      render: (c: Company) =>
+        c.tags?.length ? (
+          <span className="flex max-w-52 flex-wrap gap-1">
+            {c.tags.map((t) => (
+              <span key={t} className="badge bg-primary-50 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
+                {t}
+              </span>
+            ))}
+          </span>
+        ) : (
+          "—"
+        ),
+    },
+    {
+      key: "notes",
+      header: "Notes",
+      render: (c: Company) => (
+        <span className="block max-w-64 truncate" title={c.notes ?? ""}>
+          {c.notes || "—"}
+        </span>
+      ),
+    },
+  ];
+
   return (
     <CrudPage<Company>
       title="Companies"
@@ -58,26 +123,8 @@ export default function Companies() {
       fields={fields}
       toForm={(c) => ({ ...c, owner_id: c.owner_id ?? "" })}
       searchPlaceholder="Search companies…"
-      columns={[
-        { key: "name", header: "Name", sortable: true, render: (c) => <span className="font-medium">{c.name}</span> },
-        { key: "industry", header: "Industry", sortable: true },
-        { key: "city", header: "City" },
-        { key: "website", header: "Website", render: (c) => c.website || "—" },
-        {
-          key: "owner",
-          header: "Manager",
-          render: (c) =>
-            c.owner ? (
-              <span className="flex items-center gap-2">
-                <Avatar first={c.owner.first_name} last={c.owner.last_name} size={22} />
-                {fullName(c.owner)}
-              </span>
-            ) : (
-              "—"
-            ),
-        },
-        { key: "created_at", header: "Created", sortable: true, render: (c) => formatDate(c.created_at) },
-      ]}
+      columns={defaultColumns}
+      allColumns={[...defaultColumns, ...extraColumns]}
     />
   );
 }

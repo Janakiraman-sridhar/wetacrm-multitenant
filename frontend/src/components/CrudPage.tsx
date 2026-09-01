@@ -353,6 +353,8 @@ export interface CrudPageProps<T extends { id: string }> {
   endpoint: string; // e.g. "/companies"
   module: string; // permission module, e.g. "companies"
   columns: Column<T>[];
+  /** Complete field catalog selectable in views; defaults to `columns`. */
+  allColumns?: Column<T>[];
   fields: FieldDef[];
   schema: ZodTypeAny;
   defaults: Record<string, any>;
@@ -371,6 +373,7 @@ export function CrudPage<T extends { id: string }>({
   endpoint,
   module,
   columns,
+  allColumns,
   fields,
   schema,
   defaults,
@@ -396,9 +399,10 @@ export function CrudPage<T extends { id: string }>({
   const [deleting, setDeleting] = useState<T | null>(null);
   const [activeView, setActiveView] = useState<SavedView | null>(null);
 
+  const catalog = allColumns ?? columns;
   const visibleColumns = useMemo(
-    () => (activeView ? columns.filter((c) => activeView.columns.includes(c.key)) : columns),
-    [columns, activeView]
+    () => (activeView ? catalog.filter((c) => activeView.columns.includes(c.key)) : columns),
+    [columns, catalog, activeView]
   );
 
   const params = useMemo(
@@ -460,7 +464,7 @@ export function CrudPage<T extends { id: string }>({
         <div className="flex flex-wrap items-center gap-2">
           {toolbar}
           <ViewsControl
-            columns={columns}
+            columns={catalog}
             storageKey={`weta_views_${module}`}
             activeView={activeView}
             onActivate={setActiveView}

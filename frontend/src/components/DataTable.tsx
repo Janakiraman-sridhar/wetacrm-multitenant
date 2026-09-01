@@ -58,13 +58,19 @@ export function DataTable<T extends { id: string }>({
   return (
     <div className="card overflow-hidden">
       <div className="max-h-[calc(100vh-280px)] overflow-auto">
-        <table className="w-full min-w-[640px] border-collapse">
+        {/* w-max lets the table grow past the container so it scrolls horizontally
+            when a view selects many fields; the first and actions columns stay pinned. */}
+        <table className="w-max min-w-full border-collapse">
           <thead>
             <tr>
-              {columns.map((col) => (
+              {columns.map((col, i) => (
                 <th
                   key={col.key}
-                  className={clsx("th", col.sortable && "cursor-pointer select-none hover:text-primary-600")}
+                  className={clsx(
+                    "th",
+                    col.sortable && "cursor-pointer select-none hover:text-primary-600",
+                    i === 0 && "left-0 z-20 border-r border-slate-200 dark:border-slate-800"
+                  )}
                   onClick={() => col.sortable && toggleSort(col.key)}
                 >
                   <span className="inline-flex items-center gap-1">
@@ -74,7 +80,11 @@ export function DataTable<T extends { id: string }>({
                   </span>
                 </th>
               ))}
-              {actions && <th className="th w-20 text-right">Actions</th>}
+              {actions && (
+                <th className="th sticky right-0 z-20 w-20 border-l border-slate-200 text-right dark:border-slate-800">
+                  Actions
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -82,18 +92,28 @@ export function DataTable<T extends { id: string }>({
               <tr
                 key={row.id}
                 className={clsx(
-                  "transition-colors odd:bg-white even:bg-slate-50/50 hover:bg-primary-50/40 dark:odd:bg-slate-900 dark:even:bg-slate-800/30 dark:hover:bg-primary-900/20",
+                  "transition-colors odd:bg-white even:bg-slate-50 hover:bg-primary-50 dark:odd:bg-slate-900 dark:even:bg-slate-800 dark:hover:bg-slate-700/80",
                   onRowClick && "cursor-pointer"
                 )}
                 onClick={() => onRowClick?.(row)}
               >
-                {columns.map((col) => (
-                  <td key={col.key} className={clsx("td", col.className)}>
-                    {col.render ? col.render(row) : String((row as any)[col.key] ?? "—")}
+                {columns.map((col, i) => (
+                  <td
+                    key={col.key}
+                    className={clsx(
+                      "td",
+                      col.className,
+                      i === 0 && "sticky left-0 z-[1] border-r border-slate-100 bg-inherit dark:border-slate-800"
+                    )}
+                  >
+                    {col.render ? col.render(row) : String((row as any)[col.key] ?? "—") || "—"}
                   </td>
                 ))}
                 {actions && (
-                  <td className="td text-right" onClick={(e) => e.stopPropagation()}>
+                  <td
+                    className="td sticky right-0 z-[1] border-l border-slate-100 bg-inherit text-right dark:border-slate-800"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     {actions(row)}
                   </td>
                 )}

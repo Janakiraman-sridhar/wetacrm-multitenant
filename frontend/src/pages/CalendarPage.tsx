@@ -22,6 +22,10 @@ const TYPE_TONES: Record<string, string> = {
   reminder: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
 };
 
+function localDateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 const schema = z.object({
   title: reqStr("Title is required"),
   kind: z.string(),
@@ -40,6 +44,7 @@ export default function CalendarPage() {
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
   const [modalOpen, setModalOpen] = useState(false);
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
   const monthStart = cursor;
   const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0, 23, 59, 59);
@@ -49,7 +54,7 @@ export default function CalendarPage() {
     queryFn: async () =>
       (
         await api.get<CalendarItem[]>("/calendar", {
-          params: { start: monthStart.toISOString().slice(0, 19), end: monthEnd.toISOString().slice(0, 19) },
+          params: { start: `${localDateKey(monthStart)}T00:00:00`, end: `${localDateKey(monthEnd)}T23:59:59` },
         })
       ).data,
   });
@@ -113,7 +118,7 @@ export default function CalendarPage() {
     return rows;
   }, [cursor, monthEnd, monthStart]);
 
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = localDateKey(new Date());
   const monthLabel = cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" });
 
   const fields: FieldDef[] = [
@@ -175,14 +180,16 @@ export default function CalendarPage() {
           {weeks.map((week, wi) => (
             <div key={wi} className="grid grid-cols-7">
               {week.map((day, di) => {
-                const key = day?.toISOString().slice(0, 10);
+                const key = day ? localDateKey(day) : undefined;
                 const items = key ? (byDay[key] ?? []) : [];
                 return (
                   <div
                     key={di}
+                    onClick={() => key && setSelectedDay(key)}
                     className={clsx(
-                      "min-h-24 border-b border-r border-slate-100 p-1.5 last:border-r-0 dark:border-slate-800",
-                      !day && "bg-slate-50/60 dark:bg-slate-900/40"
+                      "min-h-24 border-b border-r border-slate-100 p-1.5 transition-colors last:border-r-0 dark:border-slate-800",
+                      !day && "bg-slate-50/60 dark:bg-slate-900/40",
+                      day && "cursor-pointer hover:bg-primary-50/50 dark:hover:bg-primary-900/20"
                     )}
                   >
                     {day && (
@@ -219,6 +226,83 @@ export default function CalendarPage() {
           ))}
         </div>
       )}
+
+      {/* Day details: every meeting/event on the clicked date, in time order */}
+      <Modal
+        open={!!selectedDay}
+        onClose={() => setSelectedDay(null)}
+        title={
+          selectedDay
+            ? new Date(`${selectedDay}T00:00:00`).toLocaleDateString(undefined, {
+                weekday: "long",
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+              })
+            : ""
+        }
+      >
+        {(() => {
+          const items = [...(selectedDay ? (byDay[selectedDay] ?? []) : [])].sort((a, b) =>
+            a.starts_at.localeCompare(b.starts_at)
+          );
+          const timeOf = (iso: string) =>
+            new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+          return (
+            <div className="space-y-3">
+              {items.length === 0 ? (
+                <p className="py-6 text-center text-sm text-slate-400">Nothing scheduled on this day.</p>
+              ) : (
+                <ul className="max-h-80 space-y-2 overflow-y-auto">
+                  {items.map((item) => (
+                    <li
+                      key={`${item.kind}-${item.id}`}
+                      className="flex items-start gap-3 rounded-xl border border-slate-100 p-3 dark:border-slate-800"
+                    >
+                      <span className="w-24 shrink-0 pt-0.5 text-sm font-semibold tabular-nums text-primary-600 dark:text-primary-400">
+                        {timeOf(item.starts_at)}
+                        {item.ends_at && (
+                          <span className="block text-[11px] font-normal text-slate-400">– {timeOf(item.ends_at)}</span>
+                        )}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">{item.title}</span>
+                        <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-400">
+                          <span className={clsx("badge capitalize", TYPE_TONES[item.type])}>
+                            {item.type.replace("_", " ")}
+                          </span>
+                          {item.location && <span className="truncate">📍 {item.location}</span>}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {hasPerm("calendar:write") && (
+                <div className="flex justify-end border-t border-slate-100 pt-3 dark:border-slate-800">
+                  <button
+                    className="btn-primary"
+                    onClick={() => {
+                      form.reset({
+                        title: "",
+                        kind: "meeting",
+                        starts_at: `${selectedDay}T09:00`,
+                        ends_at: "",
+                        location: "",
+                        notes: "",
+                      });
+                      setSelectedDay(null);
+                      setModalOpen(true);
+                    }}
+                  >
+                    <Plus size={16} /> Add on this day
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </Modal>
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Add to calendar">
         <form onSubmit={form.handleSubmit((v) => createMutation.mutate(v))} className="space-y-5">

@@ -11,7 +11,7 @@ import { api, errorMessage } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import type { AppSetting, EmailTemplate, Page, Role, User } from "@/types";
 
-const TABS = ["Company", "Users", "Roles", "Email Templates", "System"] as const;
+const TABS = ["Company", "Users", "Roles", "Documents", "Email Templates", "System"] as const;
 
 export default function SettingsPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]>("Company");
@@ -40,6 +40,7 @@ export default function SettingsPage() {
       {tab === "Company" && <CompanyProfileTab canWrite={hasPerm("settings:write")} />}
       {tab === "Users" && <UsersTab />}
       {tab === "Roles" && <RolesTab />}
+      {tab === "Documents" && <DocumentsTab canWrite={hasPerm("settings:write")} />}
       {tab === "Email Templates" && <TemplatesTab canWrite={hasPerm("settings:write")} />}
       {tab === "System" && <SystemTab />}
     </div>
@@ -428,6 +429,129 @@ function RolesTab() {
           </div>
         </div>
       </Modal>
+    </div>
+  );
+}
+
+function DocumentTemplateCard({
+  settingKey,
+  heading,
+  subtitle,
+  extraField,
+  canWrite,
+  stored,
+}: {
+  settingKey: string;
+  heading: string;
+  subtitle: string;
+  extraField: { key: string; label: string };
+  canWrite: boolean;
+  stored: Record<string, any>;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [form, setForm] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    setForm({
+      title: stored.title ?? "",
+      number_prefix: stored.number_prefix ?? "",
+      accent_color: stored.accent_color ?? "#4F46E5",
+      footer_note: stored.footer_note ?? "",
+      [extraField.key]: stored[extraField.key] ?? "",
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stored]);
+
+  const save = useMutation({
+    mutationFn: async () => (await api.put(`/settings/${settingKey}`, { value: form })).data,
+    onSuccess: () => {
+      toast(`${heading} saved`);
+      queryClient.invalidateQueries({ queryKey: ["settings"] });
+    },
+    onError: (err) => toast(errorMessage(err), "error"),
+  });
+
+  const set = (key: string, value: string) => setForm((f) => ({ ...f, [key]: value }));
+
+  return (
+    <div className="card p-5">
+      <h2 className="font-semibold">{heading}</h2>
+      <p className="mb-4 text-xs text-slate-400">{subtitle}</p>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <label className="label">Document title</label>
+          <input className="input" disabled={!canWrite} value={form.title ?? ""} onChange={(e) => set("title", e.target.value)} placeholder="e.g. TAX INVOICE" />
+        </div>
+        <div>
+          <label className="label">Number prefix</label>
+          <input className="input" disabled={!canWrite} value={form.number_prefix ?? ""} onChange={(e) => set("number_prefix", e.target.value)} placeholder="e.g. INV" />
+          <p className="mt-1 text-[11px] text-slate-400">New documents will be numbered {form.number_prefix || "…"}-{new Date().getFullYear()}-0001</p>
+        </div>
+        <div>
+          <label className="label">Accent color</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="color"
+              className="h-9 w-12 cursor-pointer rounded-lg border border-slate-300 bg-white p-1 dark:border-slate-700 dark:bg-slate-900"
+              disabled={!canWrite}
+              value={/^#[0-9a-fA-F]{6}$/.test(form.accent_color ?? "") ? form.accent_color : "#4F46E5"}
+              onChange={(e) => set("accent_color", e.target.value)}
+            />
+            <input className="input flex-1" disabled={!canWrite} value={form.accent_color ?? ""} onChange={(e) => set("accent_color", e.target.value)} placeholder="#4F46E5" />
+          </div>
+        </div>
+        <div>
+          <label className="label">{extraField.label}</label>
+          <textarea rows={2} className="input" disabled={!canWrite} value={form[extraField.key] ?? ""} onChange={(e) => set(extraField.key, e.target.value)} />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="label">Footer note (shown at the bottom of the PDF)</label>
+          <textarea rows={2} className="input" disabled={!canWrite} value={form.footer_note ?? ""} onChange={(e) => set("footer_note", e.target.value)} />
+        </div>
+      </div>
+      {canWrite && (
+        <div className="mt-4 flex justify-end">
+          <button className="btn-primary" onClick={() => save.mutate()} disabled={save.isPending}>
+            {save.isPending ? "Saving…" : "Save template"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DocumentsTab({ canWrite }: { canWrite: boolean }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["settings"],
+    queryFn: async () => (await api.get<AppSetting[]>("/settings")).data,
+  });
+
+  if (isLoading) return <PageSpinner />;
+  const value = (key: string) => data?.find((s) => s.key === key)?.value ?? {};
+
+  return (
+    <div className="grid max-w-6xl grid-cols-1 gap-4 xl:grid-cols-2">
+      <DocumentTemplateCard
+        settingKey="quotation_template"
+        heading="Quotation Template"
+        subtitle="Controls the quotation PDF and defaults for new quotations."
+        extraField={{ key: "default_terms", label: "Default terms (used when a quotation has none)" }}
+        canWrite={canWrite}
+        stored={value("quotation_template")}
+      />
+      <DocumentTemplateCard
+        settingKey="invoice_template"
+        heading="Invoice Template"
+        subtitle="Controls the invoice PDF and defaults for new invoices."
+        extraField={{ key: "default_notes", label: "Default notes (used when an invoice has none)" }}
+        canWrite={canWrite}
+        stored={value("invoice_template")}
+      />
+      <p className="text-xs text-slate-400 xl:col-span-2">
+        Company name, address, email and phone on the PDFs come from the Company tab. Changes apply to every PDF
+        generated after saving; number prefixes apply to newly created documents only.
+      </p>
     </div>
   );
 }

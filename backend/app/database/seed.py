@@ -47,6 +47,20 @@ DEFAULT_SETTINGS = {
     "branding": {"primary_color": "#4F46E5", "app_name": "WeTa CRM"},
     "counters": {"quotation": 0, "invoice": 0, "ticket": 0},
     "notification_settings": {"email_on_lead_assign": True, "email_on_task_assign": True},
+    "quotation_template": {
+        "title": "QUOTATION",
+        "number_prefix": "QT",
+        "accent_color": "#4F46E5",
+        "footer_note": "Thank you for your business.",
+        "default_terms": "This quotation is valid for 30 days from the issue date.",
+    },
+    "invoice_template": {
+        "title": "INVOICE",
+        "number_prefix": "INV",
+        "accent_color": "#4F46E5",
+        "footer_note": "Thank you for your business.",
+        "default_notes": "",
+    },
 }
 
 

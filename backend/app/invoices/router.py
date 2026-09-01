@@ -56,6 +56,10 @@ def create_invoice(payload: InvoiceCreate, db: Session = Depends(get_db), user: 
     items = data.pop("items", [])
     discount = data.pop("discount", 0)
     data["issue_date"] = data.get("issue_date") or date.today()
+    template_row = db.scalar(select(Setting).where(Setting.key == "invoice_template"))
+    template = template_row.value if template_row else {}
+    if not data.get("notes") and template.get("default_notes"):
+        data["notes"] = template["default_notes"]
     invoice = Invoice(**data, number=next_number(db, "invoice"), created_by_id=user.id)
     db.add(invoice)
     db.flush()
@@ -93,7 +97,12 @@ def update_invoice(invoice_id: str, payload: InvoiceUpdate, db: Session = Depend
 def invoice_pdf(invoice_id: str, db: Session = Depends(get_db)):
     invoice = get_or_404(db, Invoice, invoice_id, "Invoice")
     profile_row = db.scalar(select(Setting).where(Setting.key == "company_profile"))
-    pdf = document_pdf("invoice", invoice, profile_row.value if profile_row else {})
+    template_row = db.scalar(select(Setting).where(Setting.key == "invoice_template"))
+    pdf = document_pdf(
+        "invoice", invoice,
+        profile_row.value if profile_row else {},
+        template_row.value if template_row else {},
+    )
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="{invoice.number}.pdf"'})
 

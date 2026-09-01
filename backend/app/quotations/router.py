@@ -36,9 +36,13 @@ def _set_items(db: Session, quotation: Quotation, items: list[dict], discount) -
     quotation.total = billing.compute_total(subtotal, tax_total, discount)
 
 
-def _company_profile(db: Session) -> dict:
-    row = db.scalar(select(Setting).where(Setting.key == "company_profile"))
+def _setting(db: Session, key: str) -> dict:
+    row = db.scalar(select(Setting).where(Setting.key == key))
     return row.value if row else {}
+
+
+def _company_profile(db: Session) -> dict:
+    return _setting(db, "company_profile")
 
 
 @router.get("", response_model=Page[QuotationOut], dependencies=[Depends(require_perm("quotations:read"))])
@@ -63,6 +67,9 @@ def create_quotation(payload: QuotationCreate, db: Session = Depends(get_db), us
     items = data.pop("items", [])
     discount = data.pop("discount", 0)
     data["issue_date"] = data.get("issue_date") or date.today()
+    template = _setting(db, "quotation_template")
+    if not data.get("terms") and template.get("default_terms"):
+        data["terms"] = template["default_terms"]
     quotation = Quotation(**data, number=next_number(db, "quotation"), created_by_id=user.id)
     db.add(quotation)
     db.flush()
@@ -101,7 +108,7 @@ def update_quotation(quotation_id: str, payload: QuotationUpdate, db: Session = 
 @router.get("/{quotation_id}/pdf", dependencies=[Depends(require_perm("quotations:read"))])
 def quotation_pdf(quotation_id: str, db: Session = Depends(get_db)):
     quotation = get_or_404(db, Quotation, quotation_id, "Quotation")
-    pdf = document_pdf("quotation", quotation, _company_profile(db))
+    pdf = document_pdf("quotation", quotation, _company_profile(db), _setting(db, "quotation_template"))
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="{quotation.number}.pdf"'})
 
@@ -113,7 +120,7 @@ def send_quotation(quotation_id: str, payload: SendQuotationIn, db: Session = De
     if not to:
         raise AppError("No recipient email — set one on the contact or pass to_email", 400)
     profile = _company_profile(db)
-    pdf = document_pdf("quotation", quotation, profile)
+    pdf = document_pdf("quotation", quotation, profile, _setting(db, "quotation_template"))
     contact_name = f"{quotation.contact.first_name}" if quotation.contact else "Customer"
     send_templated(db, to, "quotation",
                    {"contact_name": contact_name, "number": quotation.number,

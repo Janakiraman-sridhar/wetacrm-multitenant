@@ -17,7 +17,7 @@ from app.users.models import User
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
-EDITABLE_KEYS = {"company_profile", "branding", "notification_settings"}
+EDITABLE_KEYS = {"company_profile", "branding", "notification_settings", "quotation_template", "invoice_template"}
 
 
 @router.get("", response_model=list[SettingOut], dependencies=[Depends(require_perm("settings:read"))])

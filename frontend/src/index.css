@@ -66,6 +66,16 @@
   .badge {
     @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium;
   }
+  /* Data-table scroll area: visible track so the horizontal bar is unmissable */
+  .table-scroll::-webkit-scrollbar-track {
+    @apply bg-slate-100 dark:bg-slate-800/70;
+  }
+  .table-scroll {
+    scrollbar-color: rgb(148 163 184) rgb(241 245 249);
+  }
+  .dark .table-scroll {
+    scrollbar-color: rgb(71 85 105) rgb(30 41 59);
+  }
   .th {
     @apply sticky top-0 z-10 whitespace-nowrap border-b border-slate-200 bg-slate-50 px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400;
   }

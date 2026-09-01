@@ -125,6 +125,9 @@ interface SavedView {
   columns: string[];
 }
 
+/** "default" = curated columns; "all" = every field in the catalog; or a user-saved view. */
+export type ViewSelection = "default" | "all" | SavedView;
+
 function loadViews(storageKey: string): SavedView[] {
   try {
     return JSON.parse(localStorage.getItem(storageKey) || "[]");
@@ -135,14 +138,16 @@ function loadViews(storageKey: string): SavedView[] {
 
 function ViewsControl<T extends { id: string }>({
   columns,
+  defaultCount,
   storageKey,
-  activeView,
+  active,
   onActivate,
 }: {
   columns: Column<T>[];
+  defaultCount: number;
   storageKey: string;
-  activeView: SavedView | null;
-  onActivate: (view: SavedView | null) => void;
+  active: ViewSelection;
+  onActivate: (view: ViewSelection) => void;
 }) {
   const { toast } = useToast();
   const [views, setViews] = useState<SavedView[]>(() => loadViews(storageKey));
@@ -203,7 +208,7 @@ function ViewsControl<T extends { id: string }>({
 
   const deleteView = (name: string) => {
     persist(views.filter((v) => v.name !== name));
-    if (activeView?.name === name) onActivate(null);
+    if (typeof active === "object" && active.name === name) onActivate("default");
   };
 
   const toggleDraftCol = (key: string) => {
@@ -220,34 +225,47 @@ function ViewsControl<T extends { id: string }>({
         title="Choose which fields are shown in the list"
       >
         <LayoutList size={15} className="text-primary-600 dark:text-primary-400" />
-        <span className="max-w-32 truncate">{activeView ? activeView.name : "All fields"}</span>
+        <span className="max-w-32 truncate">
+          {active === "default" ? "Default view" : active === "all" ? "All fields" : active.name}
+        </span>
         <ChevronDown size={14} className={clsx("text-slate-400 transition-transform", open && "rotate-180")} />
       </button>
 
       {open && (
         <div className="card absolute right-0 top-full z-40 mt-2 w-64 overflow-hidden p-1.5 shadow-xl">
           <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Views</p>
-          <button
-            onClick={() => {
-              onActivate(null);
-              setOpen(false);
-            }}
-            className={clsx(
-              "flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-sm transition-colors",
-              !activeView
-                ? "bg-primary-50 font-medium text-primary-700 dark:bg-primary-900/40 dark:text-primary-300"
-                : "hover:bg-slate-100 dark:hover:bg-slate-800"
-            )}
-          >
-            All fields
-            {!activeView && <Check size={14} />}
-          </button>
+          {(
+            [
+              { key: "default" as const, label: "Default view", sub: `${defaultCount} key fields` },
+              { key: "all" as const, label: "All fields", sub: `every field (${columns.length})` },
+            ]
+          ).map((builtin) => (
+            <button
+              key={builtin.key}
+              onClick={() => {
+                onActivate(builtin.key);
+                setOpen(false);
+              }}
+              className={clsx(
+                "flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-sm transition-colors",
+                active === builtin.key
+                  ? "bg-primary-50 font-medium text-primary-700 dark:bg-primary-900/40 dark:text-primary-300"
+                  : "hover:bg-slate-100 dark:hover:bg-slate-800"
+              )}
+            >
+              <span>
+                <span className="block">{builtin.label}</span>
+                <span className="block text-[11px] font-normal text-slate-400">{builtin.sub}</span>
+              </span>
+              {active === builtin.key && <Check size={14} />}
+            </button>
+          ))}
           {views.map((view) => (
             <div
               key={view.name}
               className={clsx(
                 "group flex w-full items-center gap-1 rounded-lg pr-1 transition-colors",
-                activeView?.name === view.name
+                typeof active === "object" && active.name === view.name
                   ? "bg-primary-50 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300"
                   : "hover:bg-slate-100 dark:hover:bg-slate-800"
               )}
@@ -259,10 +277,10 @@ function ViewsControl<T extends { id: string }>({
                 }}
                 className="min-w-0 flex-1 px-2.5 py-2 text-left text-sm"
               >
-                <span className={clsx("block truncate", activeView?.name === view.name && "font-medium")}>{view.name}</span>
+                <span className={clsx("block truncate", typeof active === "object" && active.name === view.name && "font-medium")}>{view.name}</span>
                 <span className="block text-[11px] text-slate-400">{view.columns.length} fields</span>
               </button>
-              {activeView?.name === view.name && <Check size={14} className="shrink-0" />}
+              {typeof active === "object" && active.name === view.name && <Check size={14} className="shrink-0" />}
               <button
                 className="shrink-0 rounded p-1 text-slate-300 opacity-0 transition-opacity hover:text-primary-600 group-hover:opacity-100"
                 title="Edit view"
@@ -397,13 +415,14 @@ export function CrudPage<T extends { id: string }>({
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<T | null>(null);
   const [deleting, setDeleting] = useState<T | null>(null);
-  const [activeView, setActiveView] = useState<SavedView | null>(null);
+  const [activeView, setActiveView] = useState<ViewSelection>("default");
 
   const catalog = allColumns ?? columns;
-  const visibleColumns = useMemo(
-    () => (activeView ? catalog.filter((c) => activeView.columns.includes(c.key)) : columns),
-    [columns, catalog, activeView]
-  );
+  const visibleColumns = useMemo(() => {
+    if (activeView === "default") return columns;
+    if (activeView === "all") return catalog;
+    return catalog.filter((c) => activeView.columns.includes(c.key));
+  }, [columns, catalog, activeView]);
 
   const params = useMemo(
     () => ({ page, page_size: pageSize, search: search || undefined, sort: sort || undefined, ...extraParams }),
@@ -465,8 +484,9 @@ export function CrudPage<T extends { id: string }>({
           {toolbar}
           <ViewsControl
             columns={catalog}
+            defaultCount={columns.length}
             storageKey={`weta_views_${module}`}
-            activeView={activeView}
+            active={activeView}
             onActivate={setActiveView}
           />
           <div className="relative">

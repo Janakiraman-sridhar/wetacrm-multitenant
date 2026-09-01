@@ -92,7 +92,7 @@ export function DataTable<T extends { id: string }>({
       <div className={clsx("relative", fill && "min-h-0 flex-1")}>
         <div
           ref={scrollRef}
-          className={clsx("overflow-auto", fill ? "h-full" : "max-h-[calc(100vh-280px)]")}
+          className={clsx("table-scroll overflow-auto", fill ? "h-full" : "max-h-[calc(100vh-280px)]")}
         >
           {/* w-max lets the table grow past the container so wide views scroll
               horizontally; the first and actions columns stay pinned. */}

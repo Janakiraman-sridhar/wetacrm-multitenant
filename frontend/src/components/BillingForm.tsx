@@ -1,7 +1,8 @@
 import { Plus, Trash2 } from "lucide-react";
-import { useFieldArray, useForm } from "react-hook-form";
+import { Controller, useFieldArray, useForm } from "react-hook-form";
 
 import type { SelectOption } from "@/components/CrudPage";
+import { DatePicker } from "@/components/DatePicker";
 import { formatMoney } from "@/lib/format";
 import type { Product } from "@/types";
 
@@ -97,11 +98,19 @@ export function BillingForm({
         </div>
         <div>
           <label className="label">Issue date</label>
-          <input type="date" className="input" {...register("issue_date")} />
+          <Controller
+            control={control}
+            name="issue_date"
+            render={({ field }) => <DatePicker value={field.value ?? ""} onChange={field.onChange} />}
+          />
         </div>
         <div>
           <label className="label">{secondDateLabel}</label>
-          <input type="date" className="input" {...register("second_date")} />
+          <Controller
+            control={control}
+            name="second_date"
+            render={({ field }) => <DatePicker value={field.value ?? ""} onChange={field.onChange} />}
+          />
         </div>
       </div>
 

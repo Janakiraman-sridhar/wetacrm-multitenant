@@ -7,6 +7,7 @@ import { Controller, useForm, useWatch } from "react-hook-form";
 import type { ZodTypeAny } from "zod";
 
 import { Column, DataTable } from "@/components/DataTable";
+import { DatePicker } from "@/components/DatePicker";
 import { ConfirmDialog, Modal } from "@/components/Modal";
 import { Select } from "@/components/Select";
 import { useAuth } from "@/context/AuthContext";
@@ -54,6 +55,21 @@ function FieldControl({ field: f, register, control, errors }: { field: FieldDef
               onChange={rhf.onChange}
               options={f.options ?? []}
               placeholder={f.placeholder ?? "Select…"}
+              error={!!error}
+            />
+          )}
+        />
+      ) : f.type === "date" || f.type === "datetime-local" ? (
+        <Controller
+          name={f.name}
+          control={control}
+          render={({ field: rhf }) => (
+            <DatePicker
+              id={`field-${f.name}`}
+              value={rhf.value ?? ""}
+              onChange={rhf.onChange}
+              mode={f.type === "date" ? "date" : "datetime"}
+              placeholder={f.placeholder}
               error={!!error}
             />
           )}

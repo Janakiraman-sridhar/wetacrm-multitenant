@@ -2,6 +2,8 @@ import clsx from "clsx";
 import { CalendarDays, Check, ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { DatePicker } from "@/components/DatePicker";
+
 export const RANGE_PRESETS = [
   { key: "today", label: "Today" },
   { key: "7d", label: "Last 7 days" },
@@ -99,7 +101,7 @@ export function DateRangePicker({
       </button>
 
       {open && (
-        <div className="card absolute right-0 top-full z-40 mt-2 flex w-[26rem] max-w-[calc(100vw-2rem)] overflow-hidden shadow-xl">
+        <div className="card absolute right-0 top-full z-40 mt-2 flex w-[26rem] max-w-[calc(100vw-2rem)] shadow-xl">
           <div className="w-40 shrink-0 border-r border-slate-200 p-1.5 dark:border-slate-800">
             {RANGE_PRESETS.map((p) => (
               <button
@@ -126,11 +128,11 @@ export function DateRangePicker({
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Custom range</p>
             <div>
               <label className="label">From</label>
-              <input type="date" className="input" value={draftStart} max={draftEnd || undefined} onChange={(e) => setDraftStart(e.target.value)} />
+              <DatePicker value={draftStart} onChange={setDraftStart} align="right" clearable={false} />
             </div>
             <div>
               <label className="label">To</label>
-              <input type="date" className="input" value={draftEnd} min={draftStart || undefined} onChange={(e) => setDraftEnd(e.target.value)} />
+              <DatePicker value={draftEnd} onChange={setDraftEnd} align="right" clearable={false} />
             </div>
             {!customValid && draftStart && draftEnd && (
               <p className="text-xs text-red-500">"From" must be on or before "To".</p>

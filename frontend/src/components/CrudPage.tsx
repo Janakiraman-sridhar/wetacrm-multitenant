@@ -2,8 +2,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import { Check, ChevronDown, LayoutList, Pencil, Plus, Search, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Controller, useForm } from "react-hook-form";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import type { ZodTypeAny } from "zod";
 
 import { Column, DataTable } from "@/components/DataTable";
@@ -28,6 +28,8 @@ export interface FieldDef {
   colSpan?: 1 | 2;
   step?: string;
   section?: string; // fields with the same section render under one header
+  /** Rendered full-width below this field, fed the live form values (e.g. a linked-record preview). */
+  after?: (values: Record<string, any>) => React.ReactNode;
 }
 
 // --- form rendering -------------------------------------------------------
@@ -84,6 +86,9 @@ export function FormFields({
   errors: any;
   control: any;
 }) {
+  // Live values for `after` renderers (linked-record previews etc.).
+  const values = useWatch({ control }) as Record<string, any>;
+
   // Group consecutive fields that share a section under one header.
   const groups = useMemo(() => {
     const out: { section?: string; items: FieldDef[] }[] = [];
@@ -109,7 +114,10 @@ export function FormFields({
           )}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {group.items.map((f) => (
-              <FieldControl key={f.name} field={f} register={register} control={control} errors={errors} />
+              <Fragment key={f.name}>
+                <FieldControl field={f} register={register} control={control} errors={errors} />
+                {f.after && <div className="sm:col-span-2">{f.after(values)}</div>}
+              </Fragment>
             ))}
           </div>
         </div>

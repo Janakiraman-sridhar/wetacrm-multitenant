@@ -12,8 +12,10 @@ from app.core.exceptions import AppError
 from app.database.base import utcnow
 from app.database.session import get_db
 from app.deals.models import Deal, DealStage
+from app.invoices.models import Invoice
 from app.leads.models import Lead, LeadSource
 from app.meetings.models import Meeting
+from app.quotations.models import Quotation
 from app.tasks.models import Task
 from app.users.models import User
 
@@ -105,6 +107,18 @@ def _tasks_created(db: Session, s: datetime, e: datetime) -> list[Task]:
 def _meetings_in(db: Session, s: datetime, e: datetime) -> list[Meeting]:
     return db.scalars(
         select(Meeting).where(Meeting.starts_at >= s, Meeting.starts_at <= e).order_by(Meeting.starts_at.asc())
+    ).all()
+
+
+def _invoices_in(db: Session, s: datetime, e: datetime) -> list[Invoice]:
+    return db.scalars(
+        select(Invoice).where(Invoice.created_at >= s, Invoice.created_at <= e).order_by(Invoice.created_at.desc())
+    ).all()
+
+
+def _quotations_in(db: Session, s: datetime, e: datetime) -> list[Quotation]:
+    return db.scalars(
+        select(Quotation).where(Quotation.created_at >= s, Quotation.created_at <= e).order_by(Quotation.created_at.desc())
     ).all()
 
 
@@ -239,6 +253,225 @@ def dashboard(
                 "user": a.user.full_name if a.user else None,
             }
             for a in _activities_in(db, s, e, 8)
+        ],
+    }
+
+
+# --- predefined report templates ------------------------------------------
+
+REPORT_TEMPLATES = {
+    "sales_performance": "Sales Performance",
+    "pipeline_health": "Pipeline Health",
+    "lead_generation": "Lead Generation",
+    "team_performance": "Team Performance",
+    "revenue_collections": "Revenue & Collections",
+}
+
+
+@router.get("/templates/{template_key}")
+def report_template(
+    template_key: str,
+    start: date | None = Query(None),
+    end: date | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    if template_key not in REPORT_TEMPLATES:
+        raise AppError(f"Unknown report template '{template_key}'", 404)
+    s, e = _range(start, end)
+    granularity, keys = _bucket_keys(s, e)
+    base = {
+        "template": template_key,
+        "title": REPORT_TEMPLATES[template_key],
+        "start": s.date().isoformat(),
+        "end": e.date().isoformat(),
+        "granularity": granularity,
+    }
+    users = {u.id: u.full_name for u in db.scalars(select(User))}
+
+    if template_key == "sales_performance":
+        won = _won_deals(db, s, e)
+        closed = _closed_deals(db, s, e)
+        open_deals = _open_deals(db, s, e)
+        revenue = sum(float(d.value or 0) for d in won)
+        buckets = {k: 0.0 for k in keys}
+        for d in won:
+            key = _key_of(d.closed_at, granularity)
+            if key in buckets:
+                buckets[key] += float(d.value or 0)
+        stages = db.scalars(select(DealStage).where(DealStage.is_won.is_(False), DealStage.is_lost.is_(False)).order_by(DealStage.order)).all()
+        by_stage = defaultdict(lambda: {"count": 0, "value": 0.0})
+        for d in open_deals:
+            by_stage[d.stage_id]["count"] += 1
+            by_stage[d.stage_id]["value"] += float(d.value or 0)
+        perf = defaultdict(lambda: {"won_value": 0.0, "won_count": 0})
+        for d in won:
+            if d.owner_id:
+                perf[d.owner_id]["won_value"] += float(d.value or 0)
+                perf[d.owner_id]["won_count"] += 1
+        return {
+            **base,
+            "kpis": {
+                "revenue": revenue,
+                "won_deals": len(won),
+                "lost_deals": len(closed) - len(won),
+                "win_rate": round(len(won) / len(closed) * 100, 1) if closed else 0,
+                "avg_deal_size": round(revenue / len(won), 2) if won else 0,
+                "open_pipeline_value": sum(float(d.value or 0) for d in open_deals),
+            },
+            "revenue_series": [{"period": k, "revenue": buckets[k]} for k in keys],
+            "pipeline_by_stage": [
+                {"stage": st.name, "count": by_stage[st.id]["count"], "value": by_stage[st.id]["value"]} for st in stages
+            ],
+            "top_performers": sorted(
+                [{"name": users.get(uid, "Unknown"), **v} for uid, v in perf.items()],
+                key=lambda r: r["won_value"], reverse=True,
+            )[:8],
+        }
+
+    if template_key == "pipeline_health":
+        open_deals = _open_deals(db, s, e)
+        open_value = sum(float(d.value or 0) for d in open_deals)
+        weighted = sum(float(d.value or 0) * (d.probability or 0) / 100 for d in open_deals)
+        stages = db.scalars(select(DealStage).where(DealStage.is_won.is_(False), DealStage.is_lost.is_(False)).order_by(DealStage.order)).all()
+        by_stage = defaultdict(lambda: {"count": 0, "value": 0.0, "weighted": 0.0})
+        for d in open_deals:
+            by_stage[d.stage_id]["count"] += 1
+            by_stage[d.stage_id]["value"] += float(d.value or 0)
+            by_stage[d.stage_id]["weighted"] += float(d.value or 0) * (d.probability or 0) / 100
+        closes: dict[str, float] = defaultdict(float)
+        for d in open_deals:
+            if d.expected_close_date:
+                closes[f"{d.expected_close_date.year:04d}-{d.expected_close_date.month:02d}"] += float(d.value or 0)
+        return {
+            **base,
+            "kpis": {
+                "open_deals": len(open_deals),
+                "open_value": open_value,
+                "weighted_forecast": round(weighted, 2),
+                "avg_probability": round(sum(d.probability or 0 for d in open_deals) / len(open_deals), 1) if open_deals else 0,
+                "no_close_date": sum(1 for d in open_deals if not d.expected_close_date),
+            },
+            "pipeline_by_stage": [
+                {"stage": st.name, **{k: round(v, 2) if isinstance(v, float) else v for k, v in by_stage[st.id].items()}}
+                for st in stages
+            ],
+            "expected_closes": [{"month": m, "value": round(v, 2)} for m, v in sorted(closes.items())],
+            "top_open_deals": [
+                {
+                    "title": d.title, "company": d.company.name if d.company else "",
+                    "stage": d.stage.name if d.stage else "", "value": float(d.value or 0),
+                    "probability": d.probability, "owner": users.get(d.owner_id, ""),
+                    "expected_close_date": d.expected_close_date.isoformat() if d.expected_close_date else "",
+                }
+                for d in sorted(open_deals, key=lambda x: float(x.value or 0), reverse=True)[:10]
+            ],
+        }
+
+    if template_key == "lead_generation":
+        leads = _leads_created(db, s, e)
+        converted = [l for l in leads if l.status == "converted"]
+        buckets = {k: {"created": 0, "converted": 0} for k in keys}
+        for l in leads:
+            key = _key_of(l.created_at, granularity)
+            if key in buckets:
+                buckets[key]["created"] += 1
+                if l.status == "converted":
+                    buckets[key]["converted"] += 1
+        source_names = {src.id: src.name for src in db.scalars(select(LeadSource))}
+        src_counts: dict[str, int] = defaultdict(int)
+        for l in leads:
+            src_counts[source_names.get(l.source_id, "Unknown")] += 1
+        status_counts: dict[str, int] = defaultdict(int)
+        for l in leads:
+            status_counts[l.status] += 1
+        return {
+            **base,
+            "kpis": {
+                "leads_created": len(leads),
+                "converted": len(converted),
+                "conversion_rate": round(len(converted) / len(leads) * 100, 1) if leads else 0,
+                "avg_score": round(sum(l.score for l in leads) / len(leads), 1) if leads else 0,
+                "unassigned": sum(1 for l in leads if not l.assigned_to_id),
+            },
+            "lead_series": [{"period": k, **buckets[k]} for k in keys],
+            "lead_sources": sorted(
+                [{"source": name, "count": c} for name, c in src_counts.items()], key=lambda r: r["count"], reverse=True
+            ),
+            "status_breakdown": [
+                {"status": st, "count": status_counts.get(st, 0)}
+                for st in ["new", "contacted", "qualified", "unqualified", "converted"]
+            ],
+        }
+
+    if template_key == "team_performance":
+        won = _won_deals(db, s, e)
+        closed = _closed_deals(db, s, e)
+        open_deals = _open_deals(db, s, e)
+        rows: dict[str, dict] = defaultdict(lambda: {"won_value": 0.0, "won_count": 0, "lost_count": 0, "open_count": 0, "open_value": 0.0})
+        for d in won:
+            if d.owner_id:
+                rows[d.owner_id]["won_value"] += float(d.value or 0)
+                rows[d.owner_id]["won_count"] += 1
+        for d in closed:
+            if d.owner_id and d.status == "lost":
+                rows[d.owner_id]["lost_count"] += 1
+        for d in open_deals:
+            if d.owner_id:
+                rows[d.owner_id]["open_count"] += 1
+                rows[d.owner_id]["open_value"] += float(d.value or 0)
+        members = []
+        for uid, r in rows.items():
+            total_closed = r["won_count"] + r["lost_count"]
+            members.append({
+                "name": users.get(uid, "Unknown"),
+                **{k: round(v, 2) if isinstance(v, float) else v for k, v in r.items()},
+                "win_rate": round(r["won_count"] / total_closed * 100, 1) if total_closed else 0,
+            })
+        members.sort(key=lambda r: r["won_value"], reverse=True)
+        return {
+            **base,
+            "kpis": {
+                "active_members": len(members),
+                "total_won_value": round(sum(m["won_value"] for m in members), 2),
+                "total_won_deals": sum(m["won_count"] for m in members),
+                "best_performer": members[0]["name"] if members else "—",
+            },
+            "members": members,
+        }
+
+    # revenue_collections
+    invoices = _invoices_in(db, s, e)
+    quotes = _quotations_in(db, s, e)
+    invoiced = sum(float(i.total or 0) for i in invoices)
+    collected = sum(float(i.amount_paid or 0) for i in invoices)
+    inv_by_status = defaultdict(lambda: {"count": 0, "value": 0.0})
+    for i in invoices:
+        inv_by_status[i.status]["count"] += 1
+        inv_by_status[i.status]["value"] += float(i.total or 0)
+    inv_buckets = {k: 0.0 for k in keys}
+    for i in invoices:
+        key = _key_of(i.created_at, granularity)
+        if key in inv_buckets:
+            inv_buckets[key] += float(i.total or 0)
+    decided = [q for q in quotes if q.status in ("accepted", "declined", "converted")]
+    accepted = [q for q in decided if q.status in ("accepted", "converted")]
+    return {
+        **base,
+        "kpis": {
+            "invoiced_total": round(invoiced, 2),
+            "collected_total": round(collected, 2),
+            "outstanding": round(invoiced - collected, 2),
+            "overdue_invoices": sum(1 for i in invoices if i.status == "overdue"),
+            "quotations_issued": len(quotes),
+            "quote_acceptance_rate": round(len(accepted) / len(decided) * 100, 1) if decided else 0,
+        },
+        "invoiced_series": [{"period": k, "value": round(inv_buckets[k], 2)} for k in keys],
+        "invoices_by_status": [
+            {"status": st, "count": v["count"], "value": round(v["value"], 2)} for st, v in sorted(inv_by_status.items())
+        ],
+        "quotes_by_status": [
+            {"status": st, "count": sum(1 for q in quotes if q.status == st)}
+            for st in ["draft", "sent", "accepted", "declined", "converted"]
         ],
     }
 
@@ -386,6 +619,56 @@ def dashboard_drilldown(
             for m in _meetings_in(db, s, e)
         ]
         title = "Meetings"
+    elif metric == "invoices":
+        columns = [
+            {"key": "number", "label": "Invoice", "type": "text"},
+            {"key": "company", "label": "Company", "type": "text"},
+            {"key": "status", "label": "Status", "type": "badge"},
+            {"key": "issue_date", "label": "Issued", "type": "date"},
+            {"key": "due_date", "label": "Due", "type": "date"},
+            {"key": "total", "label": "Total", "type": "money"},
+            {"key": "amount_paid", "label": "Paid", "type": "money"},
+            {"key": "created_by", "label": "Created by", "type": "text"},
+        ]
+        rows = [
+            {
+                "number": i.number,
+                "company": i.company.name if i.company else "",
+                "status": i.status,
+                "issue_date": i.issue_date.isoformat() if i.issue_date else "",
+                "due_date": i.due_date.isoformat() if i.due_date else "",
+                "total": float(i.total or 0),
+                "amount_paid": float(i.amount_paid or 0),
+                "currency": i.currency,
+                "created_by": i.created_by.full_name if i.created_by else "",
+            }
+            for i in _invoices_in(db, s, e)
+        ]
+        title = "Invoices"
+    elif metric == "quotations":
+        columns = [
+            {"key": "number", "label": "Quotation", "type": "text"},
+            {"key": "company", "label": "Company", "type": "text"},
+            {"key": "status", "label": "Status", "type": "badge"},
+            {"key": "issue_date", "label": "Issued", "type": "date"},
+            {"key": "valid_until", "label": "Valid until", "type": "date"},
+            {"key": "total", "label": "Total", "type": "money"},
+            {"key": "created_by", "label": "Created by", "type": "text"},
+        ]
+        rows = [
+            {
+                "number": q.number,
+                "company": q.company.name if q.company else "",
+                "status": q.status,
+                "issue_date": q.issue_date.isoformat() if q.issue_date else "",
+                "valid_until": q.valid_until.isoformat() if q.valid_until else "",
+                "total": float(q.total or 0),
+                "currency": q.currency,
+                "created_by": q.created_by.full_name if q.created_by else "",
+            }
+            for q in _quotations_in(db, s, e)
+        ]
+        title = "Quotations"
     elif metric == "recent_activities":
         columns = [
             {"key": "title", "label": "Activity", "type": "text"},

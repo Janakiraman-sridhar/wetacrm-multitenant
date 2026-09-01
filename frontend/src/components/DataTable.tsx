@@ -1,6 +1,7 @@
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import clsx from "clsx";
 
+import { Select } from "./Select";
 import { EmptyState, PageSpinner } from "./ui";
 
 export interface Column<T> {
@@ -11,6 +12,8 @@ export interface Column<T> {
   className?: string;
 }
 
+export const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 200];
+
 export function DataTable<T extends { id: string }>({
   columns,
   rows,
@@ -18,6 +21,7 @@ export function DataTable<T extends { id: string }>({
   page,
   pageSize,
   onPageChange,
+  onPageSizeChange,
   sort,
   onSortChange,
   loading,
@@ -31,6 +35,7 @@ export function DataTable<T extends { id: string }>({
   page: number;
   pageSize: number;
   onPageChange: (page: number) => void;
+  onPageSizeChange?: (size: number) => void;
   sort?: string | null;
   onSortChange?: (sort: string) => void;
   loading?: boolean;
@@ -39,6 +44,8 @@ export function DataTable<T extends { id: string }>({
   emptyTitle?: string;
 }) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
+  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
 
   const toggleSort = (key: string) => {
     if (!onSortChange) return;
@@ -50,7 +57,7 @@ export function DataTable<T extends { id: string }>({
 
   return (
     <div className="card overflow-hidden">
-      <div className="max-h-[calc(100vh-260px)] overflow-auto">
+      <div className="max-h-[calc(100vh-280px)] overflow-auto">
         <table className="w-full min-w-[640px] border-collapse">
           <thead>
             <tr>
@@ -75,7 +82,7 @@ export function DataTable<T extends { id: string }>({
               <tr
                 key={row.id}
                 className={clsx(
-                  "transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50",
+                  "transition-colors odd:bg-white even:bg-slate-50/50 hover:bg-primary-50/40 dark:odd:bg-slate-900 dark:even:bg-slate-800/30 dark:hover:bg-primary-900/20",
                   onRowClick && "cursor-pointer"
                 )}
                 onClick={() => onRowClick?.(row)}
@@ -96,19 +103,42 @@ export function DataTable<T extends { id: string }>({
         </table>
         {rows.length === 0 && <EmptyState title={emptyTitle} subtitle="Create your first record to get started." />}
       </div>
-      <div className="flex items-center justify-between border-t border-slate-200 px-4 py-2.5 text-sm text-slate-500 dark:border-slate-800">
-        <span>
-          {total} record{total === 1 ? "" : "s"}
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-200 px-4 py-2 text-sm text-slate-500 dark:border-slate-800">
+        <span className="tabular-nums">
+          {total === 0 ? "0 records" : `${from}–${to} of ${total}`}
         </span>
-        <div className="flex items-center gap-2">
-          <button className="btn-ghost !p-1.5" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
-            <ChevronLeft size={16} />
+        {onPageSizeChange && (
+          <span className="flex items-center gap-2">
+            <span className="hidden text-xs sm:inline">Rows per page</span>
+            <span className="w-[4.5rem]">
+              <Select
+                compact
+                clearable={false}
+                searchable={false}
+                direction="up"
+                value={String(pageSize)}
+                onChange={(v) => onPageSizeChange(Number(v))}
+                options={PAGE_SIZE_OPTIONS.map((n) => ({ value: String(n), label: String(n) }))}
+              />
+            </span>
+          </span>
+        )}
+        <div className="ml-auto flex items-center gap-1">
+          <button className="btn-ghost !p-1.5" disabled={page <= 1} onClick={() => onPageChange(1)} title="First page">
+            <ChevronsLeft size={15} />
           </button>
-          <span>
+          <button className="btn-ghost !p-1.5" disabled={page <= 1} onClick={() => onPageChange(page - 1)} title="Previous page">
+            <ChevronLeft size={15} />
+          </button>
+          <span className="px-1 tabular-nums">
             Page {page} of {pages}
           </span>
-          <button className="btn-ghost !p-1.5" disabled={page >= pages} onClick={() => onPageChange(page + 1)}>
-            <ChevronRight size={16} />
+          <button className="btn-ghost !p-1.5" disabled={page >= pages} onClick={() => onPageChange(page + 1)} title="Next page">
+            <ChevronRight size={15} />
+          </button>
+          <button className="btn-ghost !p-1.5" disabled={page >= pages} onClick={() => onPageChange(pages)} title="Last page">
+            <ChevronsRight size={15} />
           </button>
         </div>
       </div>

@@ -32,19 +32,19 @@ export default function Companies() {
   const users = useUserOptions();
 
   const fields: FieldDef[] = [
-    { name: "name", label: "Company name", colSpan: 2 },
-    { name: "industry", label: "Industry" },
-    { name: "website", label: "Website", placeholder: "https://…" },
-    { name: "email", label: "Email", type: "email" },
-    { name: "phone", label: "Phone" },
-    { name: "gst_number", label: "GST number" },
-    { name: "owner_id", label: "Account manager", type: "select", options: users },
-    { name: "address", label: "Address", type: "textarea", colSpan: 2 },
-    { name: "city", label: "City" },
-    { name: "state", label: "State" },
-    { name: "country", label: "Country" },
-    { name: "postal_code", label: "Postal code" },
-    { name: "notes", label: "Notes", type: "textarea", colSpan: 2 },
+    { name: "name", label: "Company name", colSpan: 2, section: "Company details", placeholder: "e.g. Acme Industries" },
+    { name: "industry", label: "Industry", section: "Company details", placeholder: "e.g. Manufacturing" },
+    { name: "website", label: "Website", section: "Company details", placeholder: "https://acme.com" },
+    { name: "gst_number", label: "GST number", section: "Company details", placeholder: "22AAAAA0000A1Z5" },
+    { name: "owner_id", label: "Account manager", type: "select", options: users, section: "Company details", placeholder: "Assign a manager…" },
+    { name: "email", label: "Email", type: "email", section: "Contact information", placeholder: "hello@acme.com" },
+    { name: "phone", label: "Phone", section: "Contact information", placeholder: "+91 98765 43210" },
+    { name: "address", label: "Street address", type: "textarea", colSpan: 2, section: "Address" },
+    { name: "city", label: "City", section: "Address" },
+    { name: "state", label: "State", section: "Address" },
+    { name: "country", label: "Country", section: "Address" },
+    { name: "postal_code", label: "Postal code", section: "Address" },
+    { name: "notes", label: "Notes", type: "textarea", colSpan: 2, section: "Additional", placeholder: "Anything the team should know about this account…" },
   ];
 
   return (

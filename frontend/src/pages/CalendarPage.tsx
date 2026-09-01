@@ -222,7 +222,7 @@ export default function CalendarPage() {
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Add to calendar">
         <form onSubmit={form.handleSubmit((v) => createMutation.mutate(v))} className="space-y-5">
-          <FormFields fields={fields} register={form.register} errors={form.formState.errors} />
+          <FormFields fields={fields} register={form.register} errors={form.formState.errors} control={form.control} />
           <div className="flex justify-end gap-2">
             <button type="button" className="btn-secondary" onClick={() => setModalOpen(false)}>
               Cancel

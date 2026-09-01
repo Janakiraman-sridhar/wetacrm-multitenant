@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Env & secrets
+.env
+!.env.example
+
+# Local dev artifacts
+*.db
+uploads/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Docker volumes (local bind mounts)
+docker/data/

@@ -1,0 +1,130 @@
+# WeTa CRM — full production stack (VPS deployment)
+#
+#   cp docker/.env.example .env    # then edit secrets
+#   docker compose up -d --build
+#
+# Everything is reachable through nginx on port 80 (add TLS per nginx/nginx.conf).
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-weta}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-weta}
+      POSTGRES_DB: ${POSTGRES_DB:-weta_crm}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-weta}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.12
+    restart: unless-stopped
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-change-me-meili-key}
+      MEILI_NO_ANALYTICS: "true"
+    volumes:
+      - meilidata:/meili_data
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-weta-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change-me-minio-secret}
+    volumes:
+      - miniodata:/data
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment: &backend_env
+      DATABASE_URL: postgresql://${POSTGRES_USER:-weta}:${POSTGRES_PASSWORD:-weta}@postgres:5432/${POSTGRES_DB:-weta_crm}
+      JWT_SECRET: ${JWT_SECRET:-change-me-jwt-secret}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@wetacrm.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      REDIS_URL: redis://redis:6379/0
+      MEILI_URL: http://meilisearch:7700
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-change-me-meili-key}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-weta-minio}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-change-me-minio-secret}
+      MINIO_BUCKET: weta-crm
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-WeTa CRM <no-reply@wetacrm.com>}
+      ENVIRONMENT: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  worker:
+    build: ./backend
+    restart: unless-stopped
+    command: celery -A app.automation.celery_app worker --loglevel=info
+    environment: *backend_env
+    depends_on:
+      - backend
+      - redis
+
+  beat:
+    build: ./backend
+    restart: unless-stopped
+    command: celery -A app.automation.celery_app beat --loglevel=info
+    environment: *backend_env
+    depends_on:
+      - backend
+      - redis
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ""
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - certbot-www:/var/www/certbot
+      - certbot-conf:/etc/letsencrypt
+    depends_on:
+      - backend
+      - frontend
+
+  certbot:
+    image: certbot/certbot
+    profiles: ["tls"]
+    volumes:
+      - certbot-www:/var/www/certbot
+      - certbot-conf:/etc/letsencrypt
+
+volumes:
+  pgdata:
+  redisdata:
+  meilidata:
+  miniodata:
+  certbot-www:
+  certbot-conf:

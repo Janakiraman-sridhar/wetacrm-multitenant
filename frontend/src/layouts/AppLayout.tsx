@@ -7,6 +7,7 @@ import {
 import { useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 
+import logoMark from "@/assets/logo-mark.png";
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { NotificationsBell } from "@/components/NotificationsPanel";
 import { Avatar } from "@/components/ui";
@@ -49,10 +50,8 @@ export function AppLayout() {
         collapsed ? "w-16" : "w-60"
       )}
     >
-      <div className="flex h-14 items-center gap-2 border-b border-slate-200 px-4 dark:border-slate-800">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-600 font-bold text-white">
-          W
-        </div>
+      <div className={clsx("flex h-14 items-center gap-2.5 border-b border-slate-200 dark:border-slate-800", collapsed ? "justify-center px-2" : "px-4")}>
+        <img src={logoMark} alt="WeTa CRM" className="h-8 w-auto shrink-0 object-contain" />
         {!collapsed && <span className="truncate text-lg font-bold">WeTa CRM</span>}
       </div>
       <nav className="flex-1 space-y-0.5 overflow-y-auto p-2">

@@ -1,13 +1,14 @@
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.activities.models import Activity
 from app.companies.models import Company
 from app.core.deps import require_perm
+from app.core.exceptions import AppError
 from app.database.base import utcnow
 from app.database.session import get_db
 from app.deals.models import Deal, DealStage
@@ -18,6 +19,410 @@ from app.users.models import User
 
 router = APIRouter(prefix="/reports", tags=["reports"], dependencies=[Depends(require_perm("reports:read"))])
 
+ACTIVE_LEAD_STATUSES = ["new", "contacted", "qualified"]
+DRILLDOWN_ROW_CAP = 500
+
+
+# --- date-range helpers ---------------------------------------------------
+
+def _range(start: date | None, end: date | None) -> tuple[datetime, datetime]:
+    """Resolve optional query params to a [start, end] datetime window.
+
+    Defaults to the last 12 months ending today.
+    """
+    end_d = end or date.today()
+    start_d = start or (end_d - timedelta(days=365))
+    if start_d > end_d:
+        raise AppError("start must be on or before end", 400)
+    return datetime.combine(start_d, time.min), datetime.combine(end_d, time.max)
+
+
+def _bucket_keys(start_dt: datetime, end_dt: datetime) -> tuple[str, list[str]]:
+    """Time-series buckets: daily for spans up to 45 days, monthly otherwise."""
+    span_days = (end_dt - start_dt).days
+    if span_days <= 45:
+        keys, day = [], start_dt.date()
+        while day <= end_dt.date():
+            keys.append(day.isoformat())
+            day += timedelta(days=1)
+        return "day", keys
+    keys = []
+    year, month = start_dt.year, start_dt.month
+    while (year, month) <= (end_dt.year, end_dt.month):
+        keys.append(f"{year:04d}-{month:02d}")
+        month += 1
+        if month == 13:
+            year, month = year + 1, 1
+    return "month", keys
+
+
+def _key_of(dt: datetime, granularity: str) -> str:
+    return dt.date().isoformat() if granularity == "day" else f"{dt.year:04d}-{dt.month:02d}"
+
+
+# --- scoped queries shared by dashboard and drilldown ---------------------
+
+def _won_deals(db: Session, s: datetime, e: datetime) -> list[Deal]:
+    return db.scalars(
+        select(Deal).where(Deal.status == "won", Deal.closed_at >= s, Deal.closed_at <= e).order_by(Deal.closed_at.desc())
+    ).all()
+
+
+def _closed_deals(db: Session, s: datetime, e: datetime) -> list[Deal]:
+    return db.scalars(
+        select(Deal).where(Deal.status.in_(["won", "lost"]), Deal.closed_at >= s, Deal.closed_at <= e)
+        .order_by(Deal.closed_at.desc())
+    ).all()
+
+
+def _open_deals(db: Session, s: datetime, e: datetime) -> list[Deal]:
+    return db.scalars(
+        select(Deal).where(Deal.status == "open", Deal.created_at >= s, Deal.created_at <= e)
+        .order_by(Deal.created_at.desc())
+    ).all()
+
+
+def _leads_created(db: Session, s: datetime, e: datetime) -> list[Lead]:
+    return db.scalars(
+        select(Lead).where(Lead.created_at >= s, Lead.created_at <= e).order_by(Lead.created_at.desc())
+    ).all()
+
+
+def _tasks_due(db: Session, s: datetime, e: datetime) -> list[Task]:
+    return db.scalars(
+        select(Task).where(
+            Task.status.in_(["todo", "in_progress"]), Task.due_date >= s, Task.due_date <= e
+        ).order_by(Task.due_date.asc())
+    ).all()
+
+
+def _tasks_created(db: Session, s: datetime, e: datetime) -> list[Task]:
+    return db.scalars(
+        select(Task).where(Task.created_at >= s, Task.created_at <= e).order_by(Task.created_at.desc())
+    ).all()
+
+
+def _meetings_in(db: Session, s: datetime, e: datetime) -> list[Meeting]:
+    return db.scalars(
+        select(Meeting).where(Meeting.starts_at >= s, Meeting.starts_at <= e).order_by(Meeting.starts_at.asc())
+    ).all()
+
+
+def _activities_in(db: Session, s: datetime, e: datetime, limit: int) -> list[Activity]:
+    return db.scalars(
+        select(Activity).where(Activity.created_at >= s, Activity.created_at <= e)
+        .order_by(Activity.created_at.desc()).limit(limit)
+    ).all()
+
+
+# --- dashboard ------------------------------------------------------------
+
+@router.get("/dashboard")
+def dashboard(
+    start: date | None = Query(None),
+    end: date | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    s, e = _range(start, end)
+    granularity, keys = _bucket_keys(s, e)
+
+    won = _won_deals(db, s, e)
+    closed = _closed_deals(db, s, e)
+    open_deals = _open_deals(db, s, e)
+    leads = _leads_created(db, s, e)
+    tasks_due = _tasks_due(db, s, e)
+    meetings = _meetings_in(db, s, e)
+
+    revenue = sum(float(d.value or 0) for d in won)
+    lost_count = len(closed) - len(won)
+
+    # Revenue over time
+    rev_buckets = {k: 0.0 for k in keys}
+    for deal in won:
+        key = _key_of(deal.closed_at, granularity)
+        if key in rev_buckets:
+            rev_buckets[key] += float(deal.value or 0)
+    revenue_series = [{"period": k, "revenue": rev_buckets[k]} for k in keys]
+
+    # Lead creation vs conversion over time
+    lead_buckets: dict[str, dict] = {k: {"created": 0, "converted": 0} for k in keys}
+    for lead in leads:
+        key = _key_of(lead.created_at, granularity)
+        if key in lead_buckets:
+            lead_buckets[key]["created"] += 1
+            if lead.status == "converted":
+                lead_buckets[key]["converted"] += 1
+    lead_conversion = [{"period": k, **lead_buckets[k]} for k in keys]
+
+    # Open pipeline by stage (deals created in range, non-terminal stages)
+    stages = db.scalars(select(DealStage).where(DealStage.is_won.is_(False), DealStage.is_lost.is_(False)).order_by(DealStage.order)).all()
+    by_stage = defaultdict(lambda: {"count": 0, "value": 0.0})
+    for deal in open_deals:
+        by_stage[deal.stage_id]["count"] += 1
+        by_stage[deal.stage_id]["value"] += float(deal.value or 0)
+    pipeline_by_stage = [
+        {"stage": st.name, "count": by_stage[st.id]["count"], "value": by_stage[st.id]["value"]}
+        for st in stages
+    ]
+
+    # Lead sources
+    source_names = {src.id: src.name for src in db.scalars(select(LeadSource))}
+    src_counts: dict[str, int] = defaultdict(int)
+    for lead in leads:
+        src_counts[source_names.get(lead.source_id, "Unknown")] += 1
+    lead_sources = sorted(
+        [{"source": name, "count": count} for name, count in src_counts.items()],
+        key=lambda r: r["count"], reverse=True,
+    )
+
+    # Win rate (deals closed in range)
+    win_rate = {
+        "won": len(won),
+        "lost": lost_count,
+        "win_rate": round(len(won) / len(closed) * 100, 1) if closed else 0,
+    }
+
+    # Tasks overview (tasks created in range, by status)
+    task_counts: dict[str, int] = defaultdict(int)
+    for task in _tasks_created(db, s, e):
+        task_counts[task.status] += 1
+    tasks_overview = [
+        {"status": status, "count": task_counts.get(status, 0)}
+        for status in ["todo", "in_progress", "done", "cancelled"]
+    ]
+
+    # Team performance (won in range / open created in range, per owner)
+    perf = defaultdict(lambda: {"won_value": 0.0, "won_count": 0, "open_count": 0})
+    for deal in won:
+        if deal.owner_id:
+            perf[deal.owner_id]["won_value"] += float(deal.value or 0)
+            perf[deal.owner_id]["won_count"] += 1
+    for deal in open_deals:
+        if deal.owner_id:
+            perf[deal.owner_id]["open_count"] += 1
+    users = {u.id: u.full_name for u in db.scalars(select(User))}
+    team_performance = sorted(
+        [{"user_id": uid, "name": users.get(uid, "Unknown"), **stats} for uid, stats in perf.items()],
+        key=lambda r: r["won_value"], reverse=True,
+    )[:8]
+
+    upcoming = [m for m in meetings if m.starts_at >= utcnow()][:5] or meetings[:5]
+
+    return {
+        "start": s.date().isoformat(),
+        "end": e.date().isoformat(),
+        "granularity": granularity,
+        "kpis": {
+            "revenue": revenue,
+            "won_deals": len(won),
+            "active_leads": sum(1 for l in leads if l.status in ACTIVE_LEAD_STATUSES),
+            "open_deals": len(open_deals),
+            "open_deals_value": sum(float(d.value or 0) for d in open_deals),
+            "tasks_due": len(tasks_due),
+            "meetings": len(meetings),
+        },
+        "revenue_series": revenue_series,
+        "lead_conversion": lead_conversion,
+        "pipeline_by_stage": pipeline_by_stage,
+        "lead_sources": lead_sources,
+        "win_rate": win_rate,
+        "tasks_overview": tasks_overview,
+        "team_performance": team_performance,
+        "upcoming_meetings": [
+            {"id": m.id, "title": m.title, "starts_at": m.starts_at.isoformat(), "location": m.location}
+            for m in upcoming
+        ],
+        "recent_activities": [
+            {
+                "id": a.id, "type": a.type, "title": a.title, "entity_type": a.entity_type,
+                "created_at": a.created_at.isoformat(),
+                "user": a.user.full_name if a.user else None,
+            }
+            for a in _activities_in(db, s, e, 8)
+        ],
+    }
+
+
+# --- drilldown: underlying rows for every KPI / chart ---------------------
+
+def _deal_rows(deals: list[Deal]) -> tuple[list[dict], list[dict]]:
+    columns = [
+        {"key": "title", "label": "Deal"},
+        {"key": "company", "label": "Company"},
+        {"key": "stage", "label": "Stage"},
+        {"key": "status", "label": "Status"},
+        {"key": "value", "label": "Value"},
+        {"key": "currency", "label": "Currency"},
+        {"key": "probability", "label": "Probability %"},
+        {"key": "owner", "label": "Owner"},
+        {"key": "expected_close_date", "label": "Expected close"},
+        {"key": "closed_at", "label": "Closed at"},
+        {"key": "created_at", "label": "Created"},
+    ]
+    rows = [
+        {
+            "title": d.title,
+            "company": d.company.name if d.company else "",
+            "stage": d.stage.name if d.stage else "",
+            "status": d.status,
+            "value": float(d.value or 0),
+            "currency": d.currency,
+            "probability": d.probability,
+            "owner": d.owner.full_name if d.owner else "",
+            "expected_close_date": d.expected_close_date.isoformat() if d.expected_close_date else "",
+            "closed_at": d.closed_at.isoformat(sep=" ", timespec="minutes") if d.closed_at else "",
+            "created_at": d.created_at.isoformat(sep=" ", timespec="minutes"),
+        }
+        for d in deals
+    ]
+    return columns, rows
+
+
+def _lead_rows(leads: list[Lead], source_names: dict) -> tuple[list[dict], list[dict]]:
+    columns = [
+        {"key": "title", "label": "Lead"},
+        {"key": "company_name", "label": "Company"},
+        {"key": "contact_name", "label": "Contact"},
+        {"key": "email", "label": "Email"},
+        {"key": "source", "label": "Source"},
+        {"key": "status", "label": "Status"},
+        {"key": "score", "label": "Score"},
+        {"key": "assigned_to", "label": "Assigned to"},
+        {"key": "created_at", "label": "Created"},
+    ]
+    rows = [
+        {
+            "title": l.title,
+            "company_name": l.company_name or "",
+            "contact_name": l.contact_name or "",
+            "email": l.email or "",
+            "source": source_names.get(l.source_id, ""),
+            "status": l.status,
+            "score": l.score,
+            "assigned_to": l.assigned_to.full_name if l.assigned_to else "",
+            "created_at": l.created_at.isoformat(sep=" ", timespec="minutes"),
+        }
+        for l in leads
+    ]
+    return columns, rows
+
+
+def _task_rows(tasks: list[Task]) -> tuple[list[dict], list[dict]]:
+    columns = [
+        {"key": "title", "label": "Task"},
+        {"key": "priority", "label": "Priority"},
+        {"key": "status", "label": "Status"},
+        {"key": "due_date", "label": "Due"},
+        {"key": "assigned_to", "label": "Assigned to"},
+        {"key": "created_by", "label": "Created by"},
+        {"key": "created_at", "label": "Created"},
+    ]
+    rows = [
+        {
+            "title": t.title,
+            "priority": t.priority,
+            "status": t.status,
+            "due_date": t.due_date.isoformat(sep=" ", timespec="minutes") if t.due_date else "",
+            "assigned_to": t.assigned_to.full_name if t.assigned_to else "",
+            "created_by": t.created_by.full_name if t.created_by else "",
+            "created_at": t.created_at.isoformat(sep=" ", timespec="minutes"),
+        }
+        for t in tasks
+    ]
+    return columns, rows
+
+
+@router.get("/dashboard/drilldown")
+def dashboard_drilldown(
+    metric: str = Query(min_length=1, max_length=50),
+    start: date | None = Query(None),
+    end: date | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    s, e = _range(start, end)
+    source_names = {src.id: src.name for src in db.scalars(select(LeadSource))}
+
+    if metric in ("revenue", "won_deals", "revenue_series"):
+        columns, rows = _deal_rows(_won_deals(db, s, e))
+        title = "Won deals"
+    elif metric == "open_deals" or metric == "pipeline_by_stage":
+        columns, rows = _deal_rows(_open_deals(db, s, e))
+        title = "Open deals"
+    elif metric == "win_rate":
+        columns, rows = _deal_rows(_closed_deals(db, s, e))
+        title = "Closed deals (won + lost)"
+    elif metric == "team_performance":
+        deals = _won_deals(db, s, e) + _open_deals(db, s, e)
+        columns, rows = _deal_rows(deals)
+        title = "Deals by owner"
+    elif metric == "active_leads":
+        leads = [l for l in _leads_created(db, s, e) if l.status in ACTIVE_LEAD_STATUSES]
+        columns, rows = _lead_rows(leads, source_names)
+        title = "Active leads"
+    elif metric in ("lead_conversion", "lead_sources"):
+        columns, rows = _lead_rows(_leads_created(db, s, e), source_names)
+        title = "Leads created"
+    elif metric == "tasks_due":
+        columns, rows = _task_rows(_tasks_due(db, s, e))
+        title = "Tasks due"
+    elif metric == "tasks_overview":
+        columns, rows = _task_rows(_tasks_created(db, s, e))
+        title = "Tasks created"
+    elif metric in ("meetings", "upcoming_meetings"):
+        columns = [
+            {"key": "title", "label": "Meeting"},
+            {"key": "starts_at", "label": "Starts"},
+            {"key": "ends_at", "label": "Ends"},
+            {"key": "location", "label": "Location"},
+            {"key": "organizer", "label": "Organizer"},
+        ]
+        rows = [
+            {
+                "title": m.title,
+                "starts_at": m.starts_at.isoformat(sep=" ", timespec="minutes"),
+                "ends_at": m.ends_at.isoformat(sep=" ", timespec="minutes") if m.ends_at else "",
+                "location": m.location or "",
+                "organizer": m.organizer.full_name if m.organizer else "",
+            }
+            for m in _meetings_in(db, s, e)
+        ]
+        title = "Meetings"
+    elif metric == "recent_activities":
+        columns = [
+            {"key": "title", "label": "Activity"},
+            {"key": "type", "label": "Type"},
+            {"key": "entity_type", "label": "Related to"},
+            {"key": "user", "label": "By"},
+            {"key": "created_at", "label": "When"},
+        ]
+        rows = [
+            {
+                "title": a.title,
+                "type": a.type,
+                "entity_type": a.entity_type,
+                "user": a.user.full_name if a.user else "",
+                "created_at": a.created_at.isoformat(sep=" ", timespec="minutes"),
+            }
+            for a in _activities_in(db, s, e, DRILLDOWN_ROW_CAP)
+        ]
+        title = "Activities"
+    else:
+        raise AppError(f"Unknown drilldown metric '{metric}'", 400)
+
+    truncated = len(rows) > DRILLDOWN_ROW_CAP
+    return {
+        "metric": metric,
+        "title": title,
+        "start": s.date().isoformat(),
+        "end": e.date().isoformat(),
+        "columns": columns,
+        "rows": rows[:DRILLDOWN_ROW_CAP],
+        "total": len(rows),
+        "truncated": truncated,
+    }
+
+
+# --- standalone reports (Reports page) ------------------------------------
 
 def _month_key(dt) -> str:
     return f"{dt.year:04d}-{dt.month:02d}"
@@ -35,114 +440,26 @@ def _last_12_months() -> list[str]:
     return list(reversed(months))
 
 
-@router.get("/dashboard")
-def dashboard(db: Session = Depends(get_db)):
-    now = utcnow()
-    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    today_end = today_start + timedelta(days=1)
-
-    revenue = db.scalar(select(func.coalesce(func.sum(Deal.value), 0)).where(Deal.status == "won")) or 0
-    revenue_this_month = db.scalar(
-        select(func.coalesce(func.sum(Deal.value), 0)).where(Deal.status == "won", Deal.closed_at >= month_start)
-    ) or 0
-    active_leads = db.scalar(select(func.count()).select_from(Lead).where(Lead.status.in_(["new", "contacted", "qualified"]))) or 0
-    open_deals = db.scalar(select(func.count()).select_from(Deal).where(Deal.status == "open")) or 0
-    open_deals_value = db.scalar(select(func.coalesce(func.sum(Deal.value), 0)).where(Deal.status == "open")) or 0
-    won_deals = db.scalar(select(func.count()).select_from(Deal).where(Deal.status == "won")) or 0
-    tasks_due_today = db.scalar(
-        select(func.count()).select_from(Task).where(
-            Task.status.in_(["todo", "in_progress"]), Task.due_date >= today_start, Task.due_date < today_end
-        )
-    ) or 0
-
-    upcoming_meetings = [
-        {"id": m.id, "title": m.title, "starts_at": m.starts_at.isoformat(), "location": m.location}
-        for m in db.scalars(select(Meeting).where(Meeting.starts_at >= now).order_by(Meeting.starts_at).limit(5))
-    ]
-    recent_activities = [
-        {
-            "id": a.id, "type": a.type, "title": a.title, "entity_type": a.entity_type,
-            "created_at": a.created_at.isoformat(),
-            "user": a.user.full_name if a.user else None,
-        }
-        for a in db.scalars(select(Activity).order_by(Activity.created_at.desc()).limit(8))
-    ]
-
-    # Monthly won revenue, grouped in Python for SQLite/Postgres portability
-    months = _last_12_months()
-    monthly = {m: 0.0 for m in months}
-    year_ago = now - timedelta(days=370)
-    for deal in db.scalars(select(Deal).where(Deal.status == "won", Deal.closed_at >= year_ago)):
-        key = _month_key(deal.closed_at)
-        if key in monthly:
-            monthly[key] += float(deal.value or 0)
-    monthly_sales = [{"month": m, "revenue": monthly[m]} for m in months]
-
-    # Lead conversion per month (created vs converted)
-    lead_monthly: dict[str, dict] = {m: {"created": 0, "converted": 0} for m in months}
-    for lead in db.scalars(select(Lead).where(Lead.created_at >= year_ago)):
-        key = _month_key(lead.created_at)
-        if key in lead_monthly:
-            lead_monthly[key]["created"] += 1
-            if lead.status == "converted":
-                lead_monthly[key]["converted"] += 1
-    lead_conversion = [{"month": m, **lead_monthly[m]} for m in months]
-
-    # Team performance: won value per owner
-    perf = defaultdict(lambda: {"won_value": 0.0, "won_count": 0, "open_count": 0})
-    for deal in db.scalars(select(Deal)):
-        if not deal.owner_id:
-            continue
-        if deal.status == "won":
-            perf[deal.owner_id]["won_value"] += float(deal.value or 0)
-            perf[deal.owner_id]["won_count"] += 1
-        elif deal.status == "open":
-            perf[deal.owner_id]["open_count"] += 1
-    users = {u.id: u.full_name for u in db.scalars(select(User))}
-    team_performance = sorted(
-        [{"user_id": uid, "name": users.get(uid, "Unknown"), **stats} for uid, stats in perf.items()],
-        key=lambda r: r["won_value"], reverse=True,
-    )[:8]
-
-    return {
-        "kpis": {
-            "revenue": float(revenue),
-            "revenue_this_month": float(revenue_this_month),
-            "active_leads": active_leads,
-            "open_deals": open_deals,
-            "open_deals_value": float(open_deals_value),
-            "won_deals": won_deals,
-            "tasks_due_today": tasks_due_today,
-        },
-        "upcoming_meetings": upcoming_meetings,
-        "recent_activities": recent_activities,
-        "monthly_sales": monthly_sales,
-        "lead_conversion": lead_conversion,
-        "team_performance": team_performance,
-    }
-
-
 @router.get("/funnel")
 def sales_funnel(db: Session = Depends(get_db)):
     stages = db.scalars(select(DealStage).order_by(DealStage.order)).all()
     counts = dict(db.execute(select(Deal.stage_id, func.count()).group_by(Deal.stage_id)).all())
     values = dict(db.execute(select(Deal.stage_id, func.coalesce(func.sum(Deal.value), 0)).group_by(Deal.stage_id)).all())
     return [
-        {"stage": s.name, "count": counts.get(s.id, 0), "value": float(values.get(s.id, 0))}
-        for s in stages
+        {"stage": st.name, "count": counts.get(st.id, 0), "value": float(values.get(st.id, 0))}
+        for st in stages
     ]
 
 
 @router.get("/lead-sources")
 def lead_sources_report(db: Session = Depends(get_db)):
     rows = db.execute(select(Lead.source_id, func.count()).group_by(Lead.source_id)).all()
-    sources = {s.id: s.name for s in db.scalars(select(LeadSource))}
+    sources = {src.id: src.name for src in db.scalars(select(LeadSource))}
     return [{"source": sources.get(sid, "Unknown"), "count": count} for sid, count in rows]
 
 
 @router.get("/win-rate")
-def win_rate(db: Session = Depends(get_db)):
+def win_rate_report(db: Session = Depends(get_db)):
     won = db.scalar(select(func.count()).select_from(Deal).where(Deal.status == "won")) or 0
     lost = db.scalar(select(func.count()).select_from(Deal).where(Deal.status == "lost")) or 0
     open_ = db.scalar(select(func.count()).select_from(Deal).where(Deal.status == "open")) or 0

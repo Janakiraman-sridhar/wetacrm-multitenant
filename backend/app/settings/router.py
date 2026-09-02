@@ -138,9 +138,49 @@ def document_template_preview(
 
 # --- Email templates ---
 
+# Merge fields available per template, Zoho-style: users insert these into the
+# subject or body and they are filled from the record when the email is sent.
+COMMON_TEMPLATE_VARIABLES = [
+    {"key": "app_name", "label": "Application name", "sample": "WeTa CRM"},
+]
+
+TEMPLATE_VARIABLES: dict[str, list[dict]] = {
+    "welcome": [
+        {"key": "first_name", "label": "User · First name", "sample": "Priya"},
+        {"key": "email", "label": "User · Email address", "sample": "priya@company.com"},
+    ],
+    "password_reset": [
+        {"key": "first_name", "label": "User · First name", "sample": "Priya"},
+        {"key": "reset_link", "label": "Password reset link", "sample": "https://crm.example.com/reset-password?token=…"},
+    ],
+    "lead_assigned": [
+        {"key": "first_name", "label": "Assignee · First name", "sample": "Ravi"},
+        {"key": "lead_title", "label": "Lead · Title", "sample": "Acme ERP rollout"},
+    ],
+    "quotation": [
+        {"key": "contact_name", "label": "Contact · Name", "sample": "Priya"},
+        {"key": "number", "label": "Quotation · Number", "sample": "QT-2026-0042"},
+        {"key": "total", "label": "Quotation · Total", "sample": "INR 1,18,000.00"},
+        {"key": "company_name", "label": "Your company name", "sample": "WeTa Technologies"},
+    ],
+}
+
+
+def _template_out(tpl: EmailTemplate) -> dict:
+    return {
+        "id": tpl.id,
+        "name": tpl.name,
+        "subject": tpl.subject,
+        "body_html": tpl.body_html,
+        "description": tpl.description,
+        "updated_at": tpl.updated_at,
+        "variables": TEMPLATE_VARIABLES.get(tpl.name, []) + COMMON_TEMPLATE_VARIABLES,
+    }
+
+
 @router.get("/email-templates", response_model=list[EmailTemplateOut], dependencies=[Depends(require_perm("settings:read"))])
 def list_email_templates(db: Session = Depends(get_db)):
-    return db.scalars(select(EmailTemplate).order_by(EmailTemplate.name)).all()
+    return [_template_out(t) for t in db.scalars(select(EmailTemplate).order_by(EmailTemplate.name)).all()]
 
 
 @router.patch("/email-templates/{template_id}", response_model=EmailTemplateOut)
@@ -150,7 +190,7 @@ def update_email_template(template_id: str, payload: EmailTemplateUpdate, db: Se
         setattr(tpl, field, value)
     audit(db, user.id, "update", "email_template", tpl.id, {"name": tpl.name})
     db.commit()
-    return tpl
+    return _template_out(tpl)
 
 
 # --- Tags ---

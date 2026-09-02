@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.activities.service import audit, log_activity
@@ -12,7 +12,7 @@ from app.database.base import utcnow
 from app.database.session import get_db
 from app.deals.models import Deal, DealStage
 from app.deals.schemas import (
-    DealCreate, DealOut, DealUpdate, MoveStageIn, PipelineColumn, StageCreate, StageOut, StageUpdate,
+    DealCreate, DealOut, DealUpdate, MoveStageIn, PipelineColumn, ReorderStagesIn, StageCreate, StageOut, StageUpdate,
 )
 from app.notifications.service import notify
 from app.services import search_sync
@@ -23,38 +23,108 @@ router = APIRouter(prefix="/deals", tags=["deals"])
 
 # --- Stages / pipeline ---
 
+def _stage_counts(db: Session) -> dict:
+    return dict(db.execute(select(Deal.stage_id, func.count()).group_by(Deal.stage_id)).all())
+
+
+def _stage_out(stage: DealStage, counts: dict) -> dict:
+    return {
+        "id": stage.id, "name": stage.name, "order": stage.order, "probability": stage.probability,
+        "is_won": stage.is_won, "is_lost": stage.is_lost, "deal_count": counts.get(stage.id, 0),
+    }
+
+
+def _normalize_orders(db: Session) -> None:
+    """Keep open stages first (1..n) and the Won/Lost closing stages pinned at the end."""
+    stages = db.scalars(select(DealStage).order_by(DealStage.order)).all()
+    open_stages = [s for s in stages if not s.is_won and not s.is_lost]
+    terminal = [s for s in stages if s.is_won] + [s for s in stages if s.is_lost]
+    for i, stage in enumerate(open_stages + terminal, start=1):
+        stage.order = i
+
+
 @router.get("/stages", response_model=list[StageOut], dependencies=[Depends(require_perm("deals:read"))])
 def list_stages(db: Session = Depends(get_db)):
-    return db.scalars(select(DealStage).order_by(DealStage.order)).all()
+    counts = _stage_counts(db)
+    stages = db.scalars(select(DealStage).order_by(DealStage.order)).all()
+    return [_stage_out(s, counts) for s in stages]
 
 
 @router.post("/stages", response_model=StageOut)
 def create_stage(payload: StageCreate, db: Session = Depends(get_db), user: User = Depends(require_perm("settings:write"))):
-    stage = DealStage(**payload.model_dump())
+    name = payload.name.strip()
+    if not name:
+        raise AppError("Stage name is required")
+    if db.scalar(select(DealStage).where(DealStage.name == name)):
+        raise AppError("A stage with this name already exists", 409)
+    open_max = db.scalar(
+        select(func.coalesce(func.max(DealStage.order), 0)).where(DealStage.is_won.is_(False), DealStage.is_lost.is_(False))
+    ) or 0
+    stage = DealStage(name=name, probability=payload.probability, order=open_max + 1)
     db.add(stage)
-    audit(db, user.id, "create", "deal_stage", changes={"name": payload.name})
+    db.flush()
+    _normalize_orders(db)
+    audit(db, user.id, "create", "deal_stage", stage.id, {"name": name})
     db.commit()
-    return stage
+    return _stage_out(stage, _stage_counts(db))
+
+
+@router.post("/stages/reorder", response_model=list[StageOut])
+def reorder_stages(payload: ReorderStagesIn, db: Session = Depends(get_db), user: User = Depends(require_perm("settings:write"))):
+    stages = {s.id: s for s in db.scalars(select(DealStage)).all()}
+    for stage_id in payload.stage_ids:
+        stage = stages.get(stage_id)
+        if not stage:
+            raise AppError("Unknown stage in reorder list", 400)
+        if stage.is_won or stage.is_lost:
+            raise AppError("Closing stages (Won/Lost) always stay at the end", 400)
+    for index, stage_id in enumerate(payload.stage_ids, start=1):
+        stages[stage_id].order = index
+    _normalize_orders(db)
+    audit(db, user.id, "update", "deal_stage", changes={"reordered": payload.stage_ids})
+    db.commit()
+    counts = _stage_counts(db)
+    return [_stage_out(s, counts) for s in db.scalars(select(DealStage).order_by(DealStage.order)).all()]
 
 
 @router.patch("/stages/{stage_id}", response_model=StageOut)
 def update_stage(stage_id: str, payload: StageUpdate, db: Session = Depends(get_db), user: User = Depends(require_perm("settings:write"))):
     stage = get_or_404(db, DealStage, stage_id, "Stage")
-    changes = apply_updates(stage, payload.model_dump(exclude_unset=True))
+    data = payload.model_dump(exclude_unset=True)
+    if data.get("name") is not None:
+        data["name"] = data["name"].strip()
+        if not data["name"]:
+            raise AppError("Stage name is required")
+        clash = db.scalar(select(DealStage).where(DealStage.name == data["name"], DealStage.id != stage.id))
+        if clash:
+            raise AppError("A stage with this name already exists", 409)
+    if (stage.is_won or stage.is_lost) and ("probability" in data or "order" in data):
+        raise AppError("Only the name of a closing stage can be changed", 400)
+    changes = apply_updates(stage, data)
     if changes:
         audit(db, user.id, "update", "deal_stage", stage.id, changes)
     db.commit()
-    return stage
+    return _stage_out(stage, _stage_counts(db))
 
 
 @router.delete("/stages/{stage_id}", response_model=Message)
 def delete_stage(stage_id: str, db: Session = Depends(get_db), user: User = Depends(require_perm("settings:write"))):
     stage = get_or_404(db, DealStage, stage_id, "Stage")
     if stage.is_won or stage.is_lost:
-        raise AppError("Won/Lost stages cannot be deleted", 400)
-    if db.scalar(select(Deal).where(Deal.stage_id == stage.id).limit(1)):
-        raise AppError("Stage has deals and cannot be deleted", 400)
+        raise AppError("The Won and Lost closing stages cannot be deleted", 400)
+    deal_count = db.scalar(select(func.count()).select_from(Deal).where(Deal.stage_id == stage.id)) or 0
+    if deal_count:
+        raise AppError(
+            f"'{stage.name}' still contains {deal_count} deal{'s' if deal_count != 1 else ''}. "
+            "Move or close them before deleting the stage.", 409,
+        )
+    open_count = db.scalar(
+        select(func.count()).select_from(DealStage).where(DealStage.is_won.is_(False), DealStage.is_lost.is_(False))
+    ) or 0
+    if open_count <= 1:
+        raise AppError("The pipeline needs at least one open stage", 400)
     db.delete(stage)
+    _normalize_orders(db)
     audit(db, user.id, "delete", "deal_stage", stage_id, {"name": stage.name})
     db.commit()
     return {"detail": "Stage deleted"}

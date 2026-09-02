@@ -14,6 +14,12 @@ class SettingUpdate(ORMModel):
     value: dict
 
 
+class TemplateVariable(ORMModel):
+    key: str
+    label: str
+    sample: str
+
+
 class EmailTemplateOut(ORMModel):
     id: str
     name: str
@@ -21,6 +27,7 @@ class EmailTemplateOut(ORMModel):
     body_html: str
     description: str | None = None
     updated_at: datetime
+    variables: list[TemplateVariable] = []
 
 
 class EmailTemplateUpdate(ORMModel):

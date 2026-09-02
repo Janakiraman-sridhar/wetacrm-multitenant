@@ -102,6 +102,7 @@ export interface DealStage {
   probability: number;
   is_won: boolean;
   is_lost: boolean;
+  deal_count?: number;
 }
 
 export interface Deal {
@@ -295,6 +296,12 @@ export interface AppSetting {
   value: Record<string, any>;
 }
 
+export interface TemplateVariable {
+  key: string;
+  label: string;
+  sample: string;
+}
+
 export interface EmailTemplate {
   id: string;
   name: string;
@@ -302,4 +309,5 @@ export interface EmailTemplate {
   body_html: string;
   description?: string | null;
   updated_at: string;
+  variables?: TemplateVariable[];
 }

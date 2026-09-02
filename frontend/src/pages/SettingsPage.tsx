@@ -1,18 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { ExternalLink, Loader2, Plus, Trash2, Upload } from "lucide-react";
+import { Braces, ExternalLink, GripVertical, Loader2, Lock, Plus, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { Modal } from "@/components/Modal";
+import { ConfirmDialog, Modal } from "@/components/Modal";
 import { Select } from "@/components/Select";
 import { Avatar, PageSpinner, StatusBadge } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { API_URL, api, errorMessage, tokenStore } from "@/lib/api";
 import { formatDate } from "@/lib/format";
-import type { AppSetting, EmailTemplate, Page, Role, User } from "@/types";
+import type { AppSetting, DealStage, EmailTemplate, Page, Role, User } from "@/types";
 
-const TABS = ["Company", "Users", "Roles", "Documents", "Email Templates", "System"] as const;
+const TABS = ["Company", "Users", "Roles", "Pipeline", "Documents", "Email Templates", "System"] as const;
 
 export default function SettingsPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]>("Company");
@@ -41,6 +41,7 @@ export default function SettingsPage() {
       {tab === "Company" && <CompanyProfileTab canWrite={hasPerm("settings:write")} />}
       {tab === "Users" && <UsersTab />}
       {tab === "Roles" && <RolesTab />}
+      {tab === "Pipeline" && <PipelineTab canWrite={hasPerm("settings:write")} />}
       {tab === "Documents" && <DocumentsTab canWrite={hasPerm("settings:write")} />}
       {tab === "Email Templates" && <TemplatesTab canWrite={hasPerm("settings:write")} />}
       {tab === "System" && <SystemTab />}
@@ -917,12 +918,276 @@ function DocumentsTab({ canWrite }: { canWrite: boolean }) {
   );
 }
 
+function PipelineTab({ canWrite }: { canWrite: boolean }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<DealStage | null>(null);
+  const [newName, setNewName] = useState("");
+  const [newProbability, setNewProbability] = useState("20");
+
+  const { data: stages, isLoading } = useQuery({
+    queryKey: ["settings-stages"],
+    queryFn: async () => (await api.get<DealStage[]>("/deals/stages")).data,
+  });
+
+  const invalidatePipeline = () => {
+    queryClient.invalidateQueries({ queryKey: ["settings-stages"] });
+    queryClient.invalidateQueries({ queryKey: ["options", "stages"] });
+    queryClient.invalidateQueries({ queryKey: ["pipeline"] });
+    queryClient.invalidateQueries({ queryKey: ["/deals"] });
+  };
+
+  const patchStage = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Record<string, any> }) =>
+      (await api.patch(`/deals/stages/${id}`, data)).data,
+    onSuccess: () => {
+      toast("Stage updated");
+      invalidatePipeline();
+    },
+    onError: (err) => {
+      toast(errorMessage(err), "error");
+      invalidatePipeline();
+    },
+  });
+
+  const createStage = useMutation({
+    mutationFn: async () =>
+      (await api.post("/deals/stages", { name: newName.trim(), probability: Number(newProbability) || 0 })).data,
+    onSuccess: (stage) => {
+      toast(`Stage “${stage.name}” added`);
+      setNewName("");
+      setNewProbability("20");
+      invalidatePipeline();
+    },
+    onError: (err) => toast(errorMessage(err), "error"),
+  });
+
+  const deleteStage = useMutation({
+    mutationFn: async (stage: DealStage) => (await api.delete(`/deals/stages/${stage.id}`)).data,
+    onSuccess: () => {
+      toast("Stage deleted");
+      setDeleting(null);
+      invalidatePipeline();
+    },
+    onError: (err) => {
+      toast(errorMessage(err), "error");
+      setDeleting(null);
+    },
+  });
+
+  const reorder = useMutation({
+    mutationFn: async (stage_ids: string[]) => (await api.post("/deals/stages/reorder", { stage_ids })).data,
+    onSuccess: () => invalidatePipeline(),
+    onError: (err) => {
+      toast(errorMessage(err), "error");
+      invalidatePipeline();
+    },
+  });
+
+  if (isLoading || !stages) return <PageSpinner />;
+
+  const openStages = stages.filter((s) => !s.is_won && !s.is_lost);
+  const closingStages = stages.filter((s) => s.is_won || s.is_lost);
+
+  const onDrop = (targetId: string) => {
+    if (dragId && dragId !== targetId) {
+      const ids = openStages.map((s) => s.id).filter((id) => id !== dragId);
+      ids.splice(ids.indexOf(targetId), 0, dragId);
+      reorder.mutate(ids);
+    }
+    setDragId(null);
+    setOverId(null);
+  };
+
+  const commitName = (stage: DealStage, value: string) => {
+    const name = value.trim();
+    if (name && name !== stage.name) patchStage.mutate({ id: stage.id, data: { name } });
+  };
+
+  const commitProbability = (stage: DealStage, value: string) => {
+    const probability = Math.max(0, Math.min(100, Number(value)));
+    if (!Number.isNaN(probability) && probability !== stage.probability) {
+      patchStage.mutate({ id: stage.id, data: { probability } });
+    }
+  };
+
+  const deleteDisabledReason = (stage: DealStage): string | null => {
+    if ((stage.deal_count ?? 0) > 0) {
+      return `Contains ${stage.deal_count} deal${stage.deal_count === 1 ? "" : "s"} — move or close them first`;
+    }
+    if (openStages.length <= 1) return "The pipeline needs at least one open stage";
+    return null;
+  };
+
+  return (
+    <div className="max-w-3xl space-y-4">
+      <div className="card overflow-hidden">
+        <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+          <h2 className="font-semibold">Pipeline Stages</h2>
+          <p className="mt-0.5 text-xs text-slate-400">
+            Drag to reorder. Rename or change the win probability inline — changes apply to the Kanban board and
+            reports immediately. A stage holding deals cannot be deleted.
+          </p>
+        </div>
+
+        <div className="p-3">
+          {openStages.map((stage, index) => {
+            const reason = deleteDisabledReason(stage);
+            return (
+              <div
+                key={stage.id}
+                draggable={canWrite}
+                onDragStart={() => setDragId(stage.id)}
+                onDragEnd={() => {
+                  setDragId(null);
+                  setOverId(null);
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setOverId(stage.id);
+                }}
+                onDrop={() => onDrop(stage.id)}
+                className={clsx(
+                  "group mb-2 flex items-center gap-3 rounded-xl border bg-white p-2.5 transition-all dark:bg-slate-900",
+                  dragId === stage.id
+                    ? "border-primary-300 opacity-50"
+                    : overId === stage.id && dragId
+                      ? "border-primary-500 ring-2 ring-primary-500/30"
+                      : "border-slate-200 dark:border-slate-800",
+                  canWrite && "cursor-grab active:cursor-grabbing"
+                )}
+              >
+                <GripVertical size={16} className="shrink-0 text-slate-300 group-hover:text-slate-400" />
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-50 text-xs font-bold text-primary-600 dark:bg-primary-900/40 dark:text-primary-300">
+                  {index + 1}
+                </span>
+                <input
+                  key={`${stage.id}-name-${stage.name}`}
+                  defaultValue={stage.name}
+                  disabled={!canWrite}
+                  onBlur={(e) => commitName(stage, e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+                  className="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-2 py-1.5 text-sm font-medium transition-colors hover:border-slate-200 focus:border-primary-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:hover:border-slate-700 dark:focus:bg-slate-800"
+                />
+                <span className="flex shrink-0 items-center gap-1 text-sm text-slate-500">
+                  <input
+                    key={`${stage.id}-prob-${stage.probability}`}
+                    type="number"
+                    min={0}
+                    max={100}
+                    defaultValue={stage.probability}
+                    disabled={!canWrite}
+                    onBlur={(e) => commitProbability(stage, e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+                    className="w-16 rounded-lg border border-transparent bg-transparent px-2 py-1.5 text-right text-sm tabular-nums transition-colors hover:border-slate-200 focus:border-primary-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:hover:border-slate-700 dark:focus:bg-slate-800"
+                  />
+                  %
+                </span>
+                <span
+                  className={clsx(
+                    "badge w-20 shrink-0 justify-center tabular-nums",
+                    (stage.deal_count ?? 0) > 0
+                      ? "bg-amber-50 text-amber-700 ring-1 ring-amber-100 dark:bg-amber-900/40 dark:text-amber-300 dark:ring-amber-900"
+                      : "bg-slate-100 text-slate-400 dark:bg-slate-800"
+                  )}
+                  title={(stage.deal_count ?? 0) > 0 ? "Stages holding deals cannot be deleted" : "No deals in this stage"}
+                >
+                  {(stage.deal_count ?? 0) > 0 ? `${stage.deal_count} deal${stage.deal_count === 1 ? "" : "s"}` : "empty"}
+                </span>
+                {canWrite && (
+                  <button
+                    className={clsx(
+                      "shrink-0 rounded-lg p-1.5 transition-colors",
+                      reason ? "cursor-not-allowed text-slate-200 dark:text-slate-700" : "text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/30"
+                    )}
+                    title={reason ?? "Delete stage"}
+                    onClick={() => !reason && setDeleting(stage)}
+                    disabled={!!reason}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+
+          {canWrite && (
+            <div className="mt-1 flex items-center gap-2 rounded-xl border border-dashed border-slate-300 p-2.5 dark:border-slate-700">
+              <Plus size={16} className="ml-1 shrink-0 text-slate-400" />
+              <input
+                className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-sm focus:outline-none"
+                placeholder="New stage name…"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && newName.trim() && createStage.mutate()}
+              />
+              <span className="flex shrink-0 items-center gap-1 text-sm text-slate-500">
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  className="w-16 rounded-lg border border-slate-200 bg-transparent px-2 py-1.5 text-right text-sm tabular-nums focus:border-primary-500 focus:outline-none dark:border-slate-700"
+                  value={newProbability}
+                  onChange={(e) => setNewProbability(e.target.value)}
+                />
+                %
+              </span>
+              <button className="btn-primary !py-1.5" disabled={!newName.trim() || createStage.isPending} onClick={() => createStage.mutate()}>
+                {createStage.isPending ? "Adding…" : "Add stage"}
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-slate-200 px-5 py-4 dark:border-slate-800">
+          <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            <Lock size={11} /> Closing stages — always last, cannot be deleted
+          </p>
+          {closingStages.map((stage) => (
+            <div key={stage.id} className="mb-2 flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-2.5 last:mb-0 dark:border-slate-800 dark:bg-slate-800/40">
+              <Lock size={14} className="ml-0.5 shrink-0 text-slate-300" />
+              <input
+                key={`${stage.id}-name-${stage.name}`}
+                defaultValue={stage.name}
+                disabled={!canWrite}
+                onBlur={(e) => commitName(stage, e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+                className="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-2 py-1.5 text-sm font-medium transition-colors hover:border-slate-200 focus:border-primary-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:hover:border-slate-700 dark:focus:bg-slate-800"
+              />
+              <span className={clsx("badge shrink-0", stage.is_won ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300" : "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300")}>
+                {stage.is_won ? "Won · 100%" : "Lost · 0%"}
+              </span>
+              <span className="badge w-20 shrink-0 justify-center bg-slate-100 tabular-nums text-slate-400 dark:bg-slate-800">
+                {(stage.deal_count ?? 0) > 0 ? `${stage.deal_count} deal${stage.deal_count === 1 ? "" : "s"}` : "empty"}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <ConfirmDialog
+        open={!!deleting}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => deleting && deleteStage.mutate(deleting)}
+        title="Delete pipeline stage?"
+        message={`“${deleting?.name}” is empty and will be removed from the pipeline. This cannot be undone.`}
+        busy={deleteStage.isPending}
+      />
+    </div>
+  );
+}
+
 function TemplatesTab({ canWrite }: { canWrite: boolean }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<EmailTemplate | null>(null);
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  const subjectRef = useRef<HTMLInputElement>(null);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const [lastFocused, setLastFocused] = useState<"subject" | "body">("body");
 
   const templates = useQuery({
     queryKey: ["email-templates"],
@@ -939,6 +1204,29 @@ function TemplatesTab({ canWrite }: { canWrite: boolean }) {
     },
     onError: (err) => toast(errorMessage(err), "error"),
   });
+
+  const variables = editing?.variables ?? [];
+  const sampleContext = useMemo(
+    () => Object.fromEntries(variables.map((v) => [v.key, v.sample])),
+    [variables]
+  );
+  const renderSample = (text: string) =>
+    text.replace(/\{(\w+)\}/g, (match, key) => sampleContext[key] ?? match);
+
+  const insertField = (key: string) => {
+    const token = `{${key}}`;
+    const el = lastFocused === "subject" ? subjectRef.current : bodyRef.current;
+    if (!el) return;
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? start;
+    const next = el.value.slice(0, start) + token + el.value.slice(end);
+    if (lastFocused === "subject") setSubject(next);
+    else setBody(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(start + token.length, start + token.length);
+    });
+  };
 
   if (templates.isLoading) return <PageSpinner />;
 
@@ -958,6 +1246,7 @@ function TemplatesTab({ canWrite }: { canWrite: boolean }) {
                   setEditing(t);
                   setSubject(t.subject);
                   setBody(t.body_html);
+                  setLastFocused("body");
                 }}
               >
                 Edit
@@ -965,27 +1254,84 @@ function TemplatesTab({ canWrite }: { canWrite: boolean }) {
             )}
           </div>
           <p className="mt-2 truncate text-sm text-slate-500">{t.subject}</p>
+          <p className="mt-1.5 text-[11px] text-slate-400">
+            {(t.variables ?? []).length} merge field{(t.variables ?? []).length === 1 ? "" : "s"} available
+          </p>
         </div>
       ))}
 
-      <Modal open={!!editing} onClose={() => setEditing(null)} title={`Edit template: ${editing?.name ?? ""}`} wide>
-        <div className="space-y-4">
-          <div>
-            <label className="label">Subject</label>
-            <input className="input" value={subject} onChange={(e) => setSubject(e.target.value)} />
+      <Modal open={!!editing} onClose={() => setEditing(null)} title={`Edit template: ${(editing?.name ?? "").replace(/_/g, " ")}`} wide>
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          {/* Editor */}
+          <div className="space-y-4">
+            <div>
+              <label className="label">Subject</label>
+              <input
+                ref={subjectRef}
+                className="input"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                onFocus={() => setLastFocused("subject")}
+              />
+            </div>
+            <div>
+              <label className="label">Body (HTML)</label>
+              <textarea
+                ref={bodyRef}
+                rows={11}
+                className="input font-mono text-xs leading-relaxed"
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                onFocus={() => setLastFocused("body")}
+              />
+            </div>
+            <div>
+              <div className="mb-1.5 flex items-center justify-between">
+                <label className="label !mb-0">Insert field</label>
+                <span className="text-[11px] text-slate-400">
+                  inserts into the {lastFocused === "subject" ? "subject" : "body"} at the cursor
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {variables.map((v) => (
+                  <button
+                    key={v.key}
+                    type="button"
+                    onClick={() => insertField(v.key)}
+                    className="badge gap-1 border border-primary-100 bg-primary-50 text-primary-700 transition-colors hover:bg-primary-100 dark:border-primary-900 dark:bg-primary-900/40 dark:text-primary-300 dark:hover:bg-primary-900/70"
+                    title={`Inserts {${v.key}} — e.g. “${v.sample}”`}
+                  >
+                    <Braces size={10} />
+                    {v.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
-          <div>
-            <label className="label">Body (HTML — placeholders like {"{first_name}"} are filled at send time)</label>
-            <textarea rows={8} className="input font-mono text-xs" value={body} onChange={(e) => setBody(e.target.value)} />
+
+          {/* Live preview with sample data */}
+          <div className="flex flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
+            <div className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:border-slate-700 dark:bg-slate-800">
+              Preview with sample data
+            </div>
+            <div className="border-b border-slate-100 bg-white px-4 py-2.5 dark:border-slate-800 dark:bg-slate-900">
+              <p className="text-xs text-slate-400">Subject</p>
+              <p className="truncate text-sm font-semibold">{renderSample(subject) || "—"}</p>
+            </div>
+            <div
+              className="flex-1 overflow-y-auto bg-white px-4 py-3 text-sm leading-relaxed text-slate-800 [&_a]:text-primary-600 [&_a]:underline"
+              dangerouslySetInnerHTML={{ __html: renderSample(body) }}
+            />
           </div>
-          <div className="flex justify-end gap-2">
-            <button className="btn-secondary" onClick={() => setEditing(null)}>
-              Cancel
-            </button>
-            <button className="btn-primary" onClick={() => save.mutate()} disabled={save.isPending}>
-              {save.isPending ? "Saving…" : "Save template"}
-            </button>
-          </div>
+        </div>
+
+        <div className="mt-5 flex justify-end gap-2">
+          <button className="btn-secondary" onClick={() => setEditing(null)}>
+            Cancel
+          </button>
+          <button className="btn-primary" onClick={() => save.mutate()} disabled={save.isPending}>
+            {save.isPending ? "Saving…" : "Save template"}
+          </button>
         </div>
       </Modal>
     </div>

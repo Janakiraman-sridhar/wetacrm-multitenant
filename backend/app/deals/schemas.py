@@ -12,12 +12,17 @@ class StageOut(ORMModel):
     probability: int
     is_won: bool
     is_lost: bool
+    deal_count: int = 0
 
 
 class StageCreate(ORMModel):
     name: str = Field(min_length=1, max_length=100)
     order: int = 0
     probability: int = Field(0, ge=0, le=100)
+
+
+class ReorderStagesIn(ORMModel):
+    stage_ids: list[str] = Field(min_length=1)
 
 
 class StageUpdate(ORMModel):

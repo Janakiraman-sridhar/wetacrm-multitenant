@@ -35,8 +35,12 @@ def _stage_out(stage: DealStage, counts: dict) -> dict:
 
 
 def _normalize_orders(db: Session) -> None:
-    """Keep open stages first (1..n) and the Won/Lost closing stages pinned at the end."""
-    stages = db.scalars(select(DealStage).order_by(DealStage.order)).all()
+    """Keep open stages first (1..n) and the Won/Lost closing stages pinned at the end.
+
+    Sorts on the in-memory `order` values (the session has autoflush disabled, so an
+    SQL ORDER BY would see stale pre-update values and clobber a reorder).
+    """
+    stages = sorted(db.scalars(select(DealStage)).all(), key=lambda s: s.order)
     open_stages = [s for s in stages if not s.is_won and not s.is_lost]
     terminal = [s for s in stages if s.is_won] + [s for s in stages if s.is_lost]
     for i, stage in enumerate(open_stages + terminal, start=1):

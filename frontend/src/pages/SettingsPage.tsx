@@ -921,8 +921,9 @@ function DocumentsTab({ canWrite }: { canWrite: boolean }) {
 function PipelineTab({ canWrite }: { canWrite: boolean }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [overId, setOverId] = useState<string | null>(null);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [localOrder, setLocalOrder] = useState<string[] | null>(null);
+  const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [deleting, setDeleting] = useState<DealStage | null>(null);
   const [newName, setNewName] = useState("");
   const [newProbability, setNewProbability] = useState("20");
@@ -978,10 +979,20 @@ function PipelineTab({ canWrite }: { canWrite: boolean }) {
   });
 
   const reorder = useMutation({
-    mutationFn: async (stage_ids: string[]) => (await api.post("/deals/stages/reorder", { stage_ids })).data,
-    onSuccess: () => invalidatePipeline(),
+    mutationFn: async (stage_ids: string[]) =>
+      (await api.post<DealStage[]>("/deals/stages/reorder", { stage_ids })).data,
+    onSuccess: (data) => {
+      // The endpoint returns the full, freshly-ordered stage list — apply it
+      // directly so the rows never snap back while a refetch is in flight.
+      queryClient.setQueryData(["settings-stages"], data);
+      setLocalOrder(null);
+      queryClient.invalidateQueries({ queryKey: ["options", "stages"] });
+      queryClient.invalidateQueries({ queryKey: ["pipeline"] });
+      queryClient.invalidateQueries({ queryKey: ["/deals"] });
+    },
     onError: (err) => {
       toast(errorMessage(err), "error");
+      setLocalOrder(null);
       invalidatePipeline();
     },
   });
@@ -991,22 +1002,70 @@ function PipelineTab({ canWrite }: { canWrite: boolean }) {
   const openStages = stages.filter((s) => !s.is_won && !s.is_lost);
   const closingStages = stages.filter((s) => s.is_won || s.is_lost);
 
-  const onDrop = (targetId: string | "__end__") => {
-    if (dragId && dragId !== targetId) {
-      const ids = openStages.map((s) => s.id).filter((id) => id !== dragId);
-      if (targetId === "__end__") ids.push(dragId);
-      else ids.splice(ids.indexOf(targetId), 0, dragId);
-      reorder.mutate(ids);
+  const baseIds = openStages.map((s) => s.id);
+  const orderedIds = localOrder ?? baseIds;
+  const orderedStages = orderedIds
+    .map((id) => openStages.find((s) => s.id === id))
+    .filter((s): s is DealStage => !!s);
+
+  /** Pointer-based drag: rows reorder live under the cursor, saved on release. */
+  const startDrag = (e: React.PointerEvent, id: string) => {
+    if (!canWrite || reorder.isPending) return;
+    e.preventDefault();
+    try {
+      (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+    } catch {
+      /* pointer not captured — fine */
     }
-    setDragId(null);
-    setOverId(null);
+    const startOrder = [...orderedIds];
+    let current = [...startOrder];
+    setDragging(id);
+    setLocalOrder(startOrder);
+
+    const onMove = (ev: PointerEvent) => {
+      const others = current.filter((x) => x !== id);
+      let newIndex = others.length;
+      for (let i = 0; i < others.length; i++) {
+        const el = rowRefs.current[others[i]];
+        if (!el) continue;
+        const rect = el.getBoundingClientRect();
+        if (ev.clientY < rect.top + rect.height / 2) {
+          newIndex = i;
+          break;
+        }
+      }
+      const next = [...others];
+      next.splice(newIndex, 0, id);
+      if (next.join(",") !== current.join(",")) {
+        current = next;
+        setLocalOrder(next);
+      }
+    };
+
+    const finish = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
+      setDragging(null);
+      if (current.join(",") !== startOrder.join(",")) {
+        setLocalOrder(current);
+        reorder.mutate(current);
+      } else {
+        setLocalOrder(null);
+      }
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", finish);
   };
 
   const moveStage = (index: number, delta: number) => {
-    const ids = openStages.map((s) => s.id);
+    const ids = [...orderedIds];
     const target = index + delta;
     if (target < 0 || target >= ids.length) return;
     [ids[index], ids[target]] = [ids[target], ids[index]];
+    setLocalOrder(ids);
     reorder.mutate(ids);
   };
 
@@ -1036,50 +1095,31 @@ function PipelineTab({ canWrite }: { canWrite: boolean }) {
         <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
           <h2 className="font-semibold">Pipeline Stages</h2>
           <p className="mt-0.5 text-xs text-slate-400">
-            Drag to reorder. Rename or change the win probability inline — changes apply to the Kanban board and
-            reports immediately. A stage holding deals cannot be deleted.
+            Drag the handle (or use the arrows) to reorder. Rename or change the win probability inline — changes
+            apply to the Kanban board and reports immediately. A stage holding deals cannot be deleted.
           </p>
         </div>
 
-        <div className="p-3">
-          {openStages.map((stage, index) => {
+        <div className={clsx("p-3", dragging && "cursor-grabbing select-none")}>
+          {orderedStages.map((stage, index) => {
             const reason = deleteDisabledReason(stage);
             return (
               <div
                 key={stage.id}
-                onDragOver={(e) => {
-                  if (!dragId) return;
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = "move";
-                  setOverId(stage.id);
-                }}
-                onDragLeave={() => setOverId((o) => (o === stage.id ? null : o))}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  onDrop(stage.id);
+                ref={(el) => {
+                  rowRefs.current[stage.id] = el;
                 }}
                 className={clsx(
-                  "group mb-2 flex items-center gap-2 rounded-xl border bg-white p-2.5 transition-all dark:bg-slate-900",
-                  dragId === stage.id
-                    ? "border-primary-300 opacity-40"
-                    : overId === stage.id && dragId
-                      ? "border-primary-500 ring-2 ring-primary-500/30"
-                      : "border-slate-200 dark:border-slate-800"
+                  "group mb-2 flex items-center gap-2 rounded-xl border bg-white p-2.5 transition-shadow dark:bg-slate-900",
+                  dragging === stage.id
+                    ? "z-10 border-primary-400 shadow-lg ring-2 ring-primary-500/30"
+                    : "border-slate-200 dark:border-slate-800"
                 )}
               >
                 <button
                   type="button"
-                  draggable={canWrite}
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData("text/plain", stage.id);
-                    e.dataTransfer.effectAllowed = "move";
-                    setDragId(stage.id);
-                  }}
-                  onDragEnd={() => {
-                    setDragId(null);
-                    setOverId(null);
-                  }}
-                  className="shrink-0 cursor-grab rounded p-1 text-slate-300 hover:bg-slate-100 hover:text-slate-500 active:cursor-grabbing dark:hover:bg-slate-800"
+                  onPointerDown={(e) => startDrag(e, stage.id)}
+                  className="shrink-0 cursor-grab touch-none rounded p-1 text-slate-300 hover:bg-slate-100 hover:text-slate-500 active:cursor-grabbing dark:hover:bg-slate-800"
                   title="Drag to reorder"
                 >
                   <GripVertical size={16} />
@@ -1098,7 +1138,7 @@ function PipelineTab({ canWrite }: { canWrite: boolean }) {
                     <button
                       type="button"
                       className="rounded p-0.5 text-slate-300 hover:text-primary-600 disabled:opacity-30"
-                      disabled={index === openStages.length - 1 || reorder.isPending}
+                      disabled={index === orderedStages.length - 1 || reorder.isPending}
                       onClick={() => moveStage(index, 1)}
                       title="Move down"
                     >
@@ -1160,25 +1200,7 @@ function PipelineTab({ canWrite }: { canWrite: boolean }) {
           })}
 
           {canWrite && (
-            <div
-              onDragOver={(e) => {
-                if (!dragId) return;
-                e.preventDefault();
-                e.dataTransfer.dropEffect = "move";
-                setOverId("__end__");
-              }}
-              onDragLeave={() => setOverId((o) => (o === "__end__" ? null : o))}
-              onDrop={(e) => {
-                e.preventDefault();
-                onDrop("__end__");
-              }}
-              className={clsx(
-                "mt-1 flex items-center gap-2 rounded-xl border border-dashed p-2.5 transition-all",
-                overId === "__end__" && dragId
-                  ? "border-primary-500 ring-2 ring-primary-500/30"
-                  : "border-slate-300 dark:border-slate-700"
-              )}
-            >
+            <div className="mt-1 flex items-center gap-2 rounded-xl border border-dashed border-slate-300 p-2.5 dark:border-slate-700">
               <Plus size={16} className="ml-1 shrink-0 text-slate-400" />
               <input
                 className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-sm focus:outline-none"

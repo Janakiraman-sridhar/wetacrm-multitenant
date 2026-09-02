@@ -8,6 +8,7 @@ import { useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 
 import logoMark from "@/assets/logo-mark.png";
+import logoMarkDark from "@/assets/logo-mark-dark.png";
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { NotificationsBell } from "@/components/NotificationsPanel";
 import { Avatar } from "@/components/ui";
@@ -51,10 +52,9 @@ export function AppLayout() {
       )}
     >
       <div className={clsx("flex h-14 items-center gap-2.5 border-b border-slate-200 dark:border-slate-800", collapsed ? "justify-center px-2" : "px-4")}>
-        {/* white chip keeps the navy mark legible in dark mode */}
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white p-1 dark:border-slate-700">
-          <img src={logoMark} alt="WeTa CRM" className="h-full w-auto object-contain" />
-        </span>
+        {/* transparent mark; the dark theme swaps in the white-stroked variant */}
+        <img src={logoMark} alt="WeTa CRM" className="h-8 w-auto shrink-0 object-contain dark:hidden" />
+        <img src={logoMarkDark} alt="WeTa CRM" className="hidden h-8 w-auto shrink-0 object-contain dark:block" />
         {!collapsed && <span className="truncate text-lg font-bold">WeTa CRM</span>}
       </div>
       <nav className="flex-1 space-y-0.5 overflow-y-auto p-2">

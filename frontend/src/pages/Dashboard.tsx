@@ -118,7 +118,7 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Good day, {user?.first_name} 👋</h1>
+          <h1 className="text-xl font-semibold">Good day, {user?.first_name}!</h1>
           <p className="text-sm text-slate-400">
             Showing {formatDate(start)} – {formatDate(end)} · click any KPI or chart to inspect and export its data.
           </p>

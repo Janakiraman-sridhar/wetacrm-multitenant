@@ -3,7 +3,8 @@ import { useState } from "react";
 import { Navigate } from "react-router-dom";
 
 import logoFull from "@/assets/logo.png";
-import logoMark from "@/assets/logo-mark.png";
+import logoFullDark from "@/assets/logo-dark.png";
+import logoMarkDark from "@/assets/logo-mark-dark.png";
 import { useAuth } from "@/context/AuthContext";
 import { errorMessage } from "@/lib/api";
 
@@ -46,9 +47,7 @@ export default function Login() {
         <div className="pointer-events-none absolute right-24 top-1/3 h-40 w-40 rounded-full bg-emerald-400/10 blur-2xl" />
 
         <div className="relative flex items-center gap-3">
-          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white p-1.5 shadow-lg">
-            <img src={logoMark} alt="" className="h-full w-auto object-contain" />
-          </span>
+          <img src={logoMarkDark} alt="" className="h-10 w-auto object-contain drop-shadow-lg" />
           <span className="text-xl font-bold tracking-tight">WeTa CRM</span>
         </div>
 
@@ -81,10 +80,9 @@ export default function Login() {
       {/* Form panel */}
       <div className="flex flex-1 items-center justify-center bg-slate-50 p-6 dark:bg-slate-950">
         <div className="w-full max-w-sm">
-          <div className="mb-8 flex flex-col items-center gap-4 lg:hidden">
-            <span className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200 dark:ring-slate-700">
-              <img src={logoFull} alt="WeTa CRM" className="h-20 w-auto object-contain" />
-            </span>
+          <div className="mb-8 flex flex-col items-center lg:hidden">
+            <img src={logoFull} alt="WeTa CRM" className="h-24 w-auto object-contain dark:hidden" />
+            <img src={logoFullDark} alt="WeTa CRM" className="hidden h-24 w-auto object-contain dark:block" />
           </div>
 
           <h2 className="text-2xl font-bold">Welcome back</h2>

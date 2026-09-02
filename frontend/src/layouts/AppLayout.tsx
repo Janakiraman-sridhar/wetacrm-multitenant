@@ -1,8 +1,8 @@
 import clsx from "clsx";
 import {
-  BarChart3, Box, Briefcase, Building2, Calendar, CheckSquare, ChevronLeft, Contact2,
-  FileText, Kanban, LayoutDashboard, LifeBuoy, LogOut, Menu, Moon, Receipt, Settings,
-  Sun, Target, TrendingUp,
+  Building2, Calendar, ChartColumnBig, ChevronLeft, FileText, FolderKanban, Handshake,
+  LayoutDashboard, LifeBuoy, ListTodo, LogOut, Menu, Moon, Package, Receipt, Settings,
+  SquareKanban, Sun, Target, UsersRound,
 } from "lucide-react";
 import { useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
@@ -17,18 +17,18 @@ import { useTheme } from "@/context/ThemeContext";
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, perm: null },
   { to: "/companies", label: "Companies", icon: Building2, perm: "companies:read" },
-  { to: "/contacts", label: "Contacts", icon: Contact2, perm: "contacts:read" },
+  { to: "/contacts", label: "Contacts", icon: UsersRound, perm: "contacts:read" },
   { to: "/leads", label: "Leads", icon: Target, perm: "leads:read" },
-  { to: "/deals", label: "Deals", icon: TrendingUp, perm: "deals:read" },
-  { to: "/pipeline", label: "Pipeline", icon: Kanban, perm: "deals:read" },
+  { to: "/deals", label: "Deals", icon: Handshake, perm: "deals:read" },
+  { to: "/pipeline", label: "Pipeline", icon: SquareKanban, perm: "deals:read" },
   { to: "/calendar", label: "Calendar", icon: Calendar, perm: "calendar:read" },
-  { to: "/tasks", label: "Tasks", icon: CheckSquare, perm: "tasks:read" },
-  { to: "/projects", label: "Projects", icon: Briefcase, perm: "projects:read" },
-  { to: "/products", label: "Products", icon: Box, perm: "products:read" },
+  { to: "/tasks", label: "Tasks", icon: ListTodo, perm: "tasks:read" },
+  { to: "/projects", label: "Projects", icon: FolderKanban, perm: "projects:read" },
+  { to: "/products", label: "Products", icon: Package, perm: "products:read" },
   { to: "/quotations", label: "Quotations", icon: FileText, perm: "quotations:read" },
   { to: "/invoices", label: "Invoices", icon: Receipt, perm: "invoices:read" },
   { to: "/support", label: "Support", icon: LifeBuoy, perm: "support:read" },
-  { to: "/reports", label: "Reports", icon: BarChart3, perm: "reports:read" },
+  { to: "/reports", label: "Reports", icon: ChartColumnBig, perm: "reports:read" },
   { to: "/settings", label: "Settings", icon: Settings, perm: "settings:read" },
 ];
 
@@ -51,7 +51,10 @@ export function AppLayout() {
       )}
     >
       <div className={clsx("flex h-14 items-center gap-2.5 border-b border-slate-200 dark:border-slate-800", collapsed ? "justify-center px-2" : "px-4")}>
-        <img src={logoMark} alt="WeTa CRM" className="h-8 w-auto shrink-0 object-contain" />
+        {/* white chip keeps the navy mark legible in dark mode */}
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white p-1 dark:border-slate-700">
+          <img src={logoMark} alt="WeTa CRM" className="h-full w-auto object-contain" />
+        </span>
         {!collapsed && <span className="truncate text-lg font-bold">WeTa CRM</span>}
       </div>
       <nav className="flex-1 space-y-0.5 overflow-y-auto p-2">
@@ -71,7 +74,7 @@ export function AppLayout() {
             }
             title={collapsed ? label : undefined}
           >
-            <Icon size={18} className="shrink-0" />
+            <Icon size={18} strokeWidth={1.8} className="shrink-0" />
             {!collapsed && <span className="truncate">{label}</span>}
           </NavLink>
         ))}

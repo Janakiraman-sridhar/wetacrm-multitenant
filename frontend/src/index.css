@@ -76,6 +76,40 @@
   .dark .table-scroll {
     scrollbar-color: rgb(71 85 105) rgb(30 41 59);
   }
+  /* Charts follow the active theme */
+  .recharts-default-tooltip {
+    border-radius: 0.625rem !important;
+    border: 1px solid rgb(226 232 240) !important;
+    box-shadow: 0 8px 24px -8px rgb(15 23 42 / 0.15);
+  }
+  .dark .recharts-default-tooltip {
+    background-color: rgb(15 23 42) !important;
+    border-color: rgb(51 65 85) !important;
+  }
+  .dark .recharts-tooltip-label,
+  .dark .recharts-tooltip-item-list .recharts-tooltip-item {
+    color: rgb(226 232 240) !important;
+  }
+  .dark .recharts-text {
+    fill: rgb(148 163 184);
+  }
+  .dark .recharts-cartesian-grid line {
+    stroke: rgb(100 116 139);
+  }
+  .dark .recharts-cartesian-axis-line,
+  .dark .recharts-cartesian-axis-tick-line {
+    stroke: rgb(71 85 105);
+  }
+  .dark .recharts-legend-item-text {
+    color: rgb(203 213 225) !important;
+  }
+  .recharts-tooltip-cursor {
+    fill: rgb(15 23 42 / 0.04);
+  }
+  .dark .recharts-tooltip-cursor {
+    fill: rgb(255 255 255 / 0.06);
+  }
+
   .th {
     @apply sticky top-0 z-10 whitespace-nowrap border-b border-slate-200 bg-slate-50 px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400;
   }

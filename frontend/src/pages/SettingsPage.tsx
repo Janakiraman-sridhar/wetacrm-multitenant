@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { Braces, ExternalLink, GripVertical, Loader2, Lock, Plus, Trash2, Upload } from "lucide-react";
+import { Braces, ChevronDown, ChevronUp, ExternalLink, GripVertical, Loader2, Lock, Plus, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ConfirmDialog, Modal } from "@/components/Modal";
@@ -991,14 +991,23 @@ function PipelineTab({ canWrite }: { canWrite: boolean }) {
   const openStages = stages.filter((s) => !s.is_won && !s.is_lost);
   const closingStages = stages.filter((s) => s.is_won || s.is_lost);
 
-  const onDrop = (targetId: string) => {
+  const onDrop = (targetId: string | "__end__") => {
     if (dragId && dragId !== targetId) {
       const ids = openStages.map((s) => s.id).filter((id) => id !== dragId);
-      ids.splice(ids.indexOf(targetId), 0, dragId);
+      if (targetId === "__end__") ids.push(dragId);
+      else ids.splice(ids.indexOf(targetId), 0, dragId);
       reorder.mutate(ids);
     }
     setDragId(null);
     setOverId(null);
+  };
+
+  const moveStage = (index: number, delta: number) => {
+    const ids = openStages.map((s) => s.id);
+    const target = index + delta;
+    if (target < 0 || target >= ids.length) return;
+    [ids[index], ids[target]] = [ids[target], ids[index]];
+    reorder.mutate(ids);
   };
 
   const commitName = (stage: DealStage, value: string) => {
@@ -1038,28 +1047,65 @@ function PipelineTab({ canWrite }: { canWrite: boolean }) {
             return (
               <div
                 key={stage.id}
-                draggable={canWrite}
-                onDragStart={() => setDragId(stage.id)}
-                onDragEnd={() => {
-                  setDragId(null);
-                  setOverId(null);
-                }}
                 onDragOver={(e) => {
+                  if (!dragId) return;
                   e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
                   setOverId(stage.id);
                 }}
-                onDrop={() => onDrop(stage.id)}
+                onDragLeave={() => setOverId((o) => (o === stage.id ? null : o))}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  onDrop(stage.id);
+                }}
                 className={clsx(
-                  "group mb-2 flex items-center gap-3 rounded-xl border bg-white p-2.5 transition-all dark:bg-slate-900",
+                  "group mb-2 flex items-center gap-2 rounded-xl border bg-white p-2.5 transition-all dark:bg-slate-900",
                   dragId === stage.id
-                    ? "border-primary-300 opacity-50"
+                    ? "border-primary-300 opacity-40"
                     : overId === stage.id && dragId
                       ? "border-primary-500 ring-2 ring-primary-500/30"
-                      : "border-slate-200 dark:border-slate-800",
-                  canWrite && "cursor-grab active:cursor-grabbing"
+                      : "border-slate-200 dark:border-slate-800"
                 )}
               >
-                <GripVertical size={16} className="shrink-0 text-slate-300 group-hover:text-slate-400" />
+                <button
+                  type="button"
+                  draggable={canWrite}
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData("text/plain", stage.id);
+                    e.dataTransfer.effectAllowed = "move";
+                    setDragId(stage.id);
+                  }}
+                  onDragEnd={() => {
+                    setDragId(null);
+                    setOverId(null);
+                  }}
+                  className="shrink-0 cursor-grab rounded p-1 text-slate-300 hover:bg-slate-100 hover:text-slate-500 active:cursor-grabbing dark:hover:bg-slate-800"
+                  title="Drag to reorder"
+                >
+                  <GripVertical size={16} />
+                </button>
+                {canWrite && (
+                  <span className="flex shrink-0 flex-col opacity-0 transition-opacity group-hover:opacity-100">
+                    <button
+                      type="button"
+                      className="rounded p-0.5 text-slate-300 hover:text-primary-600 disabled:opacity-30"
+                      disabled={index === 0 || reorder.isPending}
+                      onClick={() => moveStage(index, -1)}
+                      title="Move up"
+                    >
+                      <ChevronUp size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded p-0.5 text-slate-300 hover:text-primary-600 disabled:opacity-30"
+                      disabled={index === openStages.length - 1 || reorder.isPending}
+                      onClick={() => moveStage(index, 1)}
+                      title="Move down"
+                    >
+                      <ChevronDown size={12} />
+                    </button>
+                  </span>
+                )}
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-50 text-xs font-bold text-primary-600 dark:bg-primary-900/40 dark:text-primary-300">
                   {index + 1}
                 </span>
@@ -1114,7 +1160,25 @@ function PipelineTab({ canWrite }: { canWrite: boolean }) {
           })}
 
           {canWrite && (
-            <div className="mt-1 flex items-center gap-2 rounded-xl border border-dashed border-slate-300 p-2.5 dark:border-slate-700">
+            <div
+              onDragOver={(e) => {
+                if (!dragId) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                setOverId("__end__");
+              }}
+              onDragLeave={() => setOverId((o) => (o === "__end__" ? null : o))}
+              onDrop={(e) => {
+                e.preventDefault();
+                onDrop("__end__");
+              }}
+              className={clsx(
+                "mt-1 flex items-center gap-2 rounded-xl border border-dashed p-2.5 transition-all",
+                overId === "__end__" && dragId
+                  ? "border-primary-500 ring-2 ring-primary-500/30"
+                  : "border-slate-300 dark:border-slate-700"
+              )}
+            >
               <Plus size={16} className="ml-1 shrink-0 text-slate-400" />
               <input
                 className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-sm focus:outline-none"

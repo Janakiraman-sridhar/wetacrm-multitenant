@@ -148,12 +148,12 @@ TEMPLATE_VARIABLES: dict[str, list[dict]] = {
     "welcome": [
         {"key": "first_name", "label": "User · First name", "sample": "Priya"},
         {"key": "email", "label": "User · Email address", "sample": "priya@company.com"},
-        {"key": "app_url", "label": "Application URL", "sample": "https://crm.example.com"},
+        {"key": "app_url", "label": "Application URL", "sample": app_config.public_app_url},
         {"key": "logo_html", "label": "Application logo (image)", "sample": ""},
     ],
     "password_reset": [
         {"key": "first_name", "label": "User · First name", "sample": "Priya"},
-        {"key": "reset_link", "label": "Password reset link", "sample": "https://crm.example.com/reset-password?token=…"},
+        {"key": "reset_link", "label": "Password reset link", "sample": f"{app_config.public_app_url}/reset-password?token=…"},
     ],
     "lead_assigned": [
         {"key": "first_name", "label": "Assignee · First name", "sample": "Ravi"},

@@ -67,6 +67,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-weta}:${POSTGRES_PASSWORD:-weta}@postgres:5432/${POSTGRES_DB:-weta_crm}
       JWT_SECRET: ${JWT_SECRET:-change-me-jwt-secret}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://crm.wetano.com}
+      APP_URL: ${APP_URL:-https://crm.wetano.com}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@wetacrm.com}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
       REDIS_URL: redis://redis:6379/0

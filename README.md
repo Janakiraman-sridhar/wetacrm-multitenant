@@ -66,6 +66,10 @@ This starts Postgres (pgvector), Redis, Meilisearch, MinIO, the API, a Celery wo
 the built frontend, and Nginx on port 80. For HTTPS, follow the Let's Encrypt notes at the top
 of [nginx/nginx.conf](nginx/nginx.conf).
 
+**Server already hosts another app on ports 80/443?** Use
+[docs/DEPLOY_ALONGSIDE.md](docs/DEPLOY_ALONGSIDE.md) with `docker-compose.contabo.yml` —
+the CRM runs with no host ports and the existing nginx routes a subdomain to it.
+
 ## Configuration
 
 All backend settings are environment variables — see [backend/.env.example](backend/.env.example).

@@ -20,6 +20,7 @@ from app.contacts.router import router as contacts_router
 from app.deals.router import router as deals_router
 from app.documents.router import router as documents_router
 from app.invoices.router import router as invoices_router
+from app.io.router import router as io_router
 from app.leads.router import router as leads_router
 from app.meetings.router import router as meetings_router
 from app.notifications.router import router as notifications_router
@@ -84,6 +85,7 @@ app.include_router(notifications_router, prefix=API_V1)
 app.include_router(reports_router, prefix=API_V1)
 app.include_router(search_router, prefix=API_V1)
 app.include_router(settings_router, prefix=API_V1)
+app.include_router(io_router, prefix=API_V1)
 
 
 @app.get("/health")

@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form";
 import { BillingForm, BillingFormValues, emptyBillingValues } from "@/components/BillingForm";
 import { useViewColumns } from "@/components/CrudPage";
 import { Column, DataTable } from "@/components/DataTable";
+import { ImportExport } from "@/components/ImportExport";
 import { ConfirmDialog, Modal } from "@/components/Modal";
 import { StatusBadge } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
@@ -176,6 +177,7 @@ export default function Quotations() {
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">Quotations</h1>
         <div className="flex items-center gap-2">
+          <ImportExport entity="quotations" module="quotations" label="Quotations" />
           {viewsControl}
           <div className="relative">
             <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />

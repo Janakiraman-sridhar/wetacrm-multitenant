@@ -118,6 +118,7 @@ export default function Companies() {
       singular="Company"
       endpoint="/companies"
       module="companies"
+      ioEntity="companies"
       schema={schema}
       defaults={defaults}
       fields={fields}

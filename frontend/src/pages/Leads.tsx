@@ -123,6 +123,7 @@ export default function Leads() {
         title="Leads"
         endpoint="/leads"
         module="leads"
+        ioEntity="leads"
         schema={schema}
         defaults={defaults}
         fields={fields}

@@ -94,6 +94,7 @@ export default function Deals() {
       title="Deals"
       endpoint="/deals"
       module="deals"
+      ioEntity="deals"
       schema={schema}
       defaults={defaults}
       fields={fields}

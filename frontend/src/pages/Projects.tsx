@@ -83,6 +83,7 @@ export default function Projects() {
       title="Projects"
       endpoint="/projects"
       module="projects"
+      ioEntity="projects"
       schema={schema}
       defaults={defaults}
       fields={fields}

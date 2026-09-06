@@ -70,6 +70,7 @@ export default function Tasks() {
       title="Tasks"
       endpoint="/tasks"
       module="tasks"
+      ioEntity="tasks"
       schema={schema}
       defaults={defaults}
       fields={fields}

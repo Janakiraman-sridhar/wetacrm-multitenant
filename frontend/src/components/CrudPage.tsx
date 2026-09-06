@@ -8,6 +8,7 @@ import type { ZodTypeAny } from "zod";
 
 import { Column, DataTable } from "@/components/DataTable";
 import { DatePicker } from "@/components/DatePicker";
+import { ImportExport } from "@/components/ImportExport";
 import { ConfirmDialog, Modal } from "@/components/Modal";
 import { Select } from "@/components/Select";
 import { useAuth } from "@/context/AuthContext";
@@ -433,6 +434,8 @@ export interface CrudPageProps<T extends { id: string }> {
   searchPlaceholder?: string;
   extraParams?: Record<string, string>;
   toolbar?: React.ReactNode;
+  /** Enables CSV import/export in the toolbar; the /io registry key (e.g. "companies"). */
+  ioEntity?: string;
   rowActions?: (row: T, helpers: { edit: (row: T) => void; remove: (row: T) => void }) => React.ReactNode;
   onRowClick?: (row: T, helpers: { edit: (row: T) => void }) => void;
   createLabel?: string;
@@ -452,6 +455,7 @@ export function CrudPage<T extends { id: string }>({
   searchPlaceholder = "Search…",
   extraParams,
   toolbar,
+  ioEntity,
   rowActions,
   onRowClick,
   createLabel,
@@ -528,6 +532,7 @@ export function CrudPage<T extends { id: string }>({
         <h1 className="text-xl font-semibold">{title}</h1>
         <div className="flex flex-wrap items-center gap-2">
           {toolbar}
+          {ioEntity && <ImportExport entity={ioEntity} module={module} label={title} />}
           {viewsControl}
           <div className="relative">
             <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />

@@ -195,6 +195,7 @@ export default function Contacts() {
       title="Contacts"
       endpoint="/contacts"
       module="contacts"
+      ioEntity="contacts"
       schema={schema.transform(toApi)}
       defaults={defaults}
       fields={fields}

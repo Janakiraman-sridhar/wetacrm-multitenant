@@ -84,6 +84,7 @@ export default function Support() {
       singular="Ticket"
       endpoint="/tickets"
       module="support"
+      ioEntity="support"
       schema={schema}
       defaults={defaults}
       fields={fields}

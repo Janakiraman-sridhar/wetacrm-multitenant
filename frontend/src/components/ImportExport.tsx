@@ -62,6 +62,7 @@ export function ImportExport({
   const [exporting, setExporting] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [sendEmails, setSendEmails] = useState(false);
 
   const canRead = hasPerm(`${module}:read`);
   const canWrite = hasPerm(`${module}:write`);
@@ -113,6 +114,7 @@ export function ImportExport({
     try {
       const fd = new FormData();
       fd.append("file", file);
+      fd.append("send_emails", sendEmails ? "true" : "false");
       const { data } = await api.post<ImportResult>(`/io/${entity}/import`, fd, {
         headers: { "Content-Type": "multipart/form-data" },
       });
@@ -132,6 +134,7 @@ export function ImportExport({
     setMenuOpen(false);
     setResult(null);
     setFileName(null);
+    setSendEmails(false);
     setOpen(true);
   };
 
@@ -200,6 +203,24 @@ export function ImportExport({
               <span className="block text-xs text-slate-400">CSV with all column names and an example row</span>
             </span>
           </button>
+
+          {!result && (
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 shrink-0 rounded accent-primary-600"
+                checked={sendEmails}
+                onChange={(e) => setSendEmails(e.target.checked)}
+              />
+              <span>
+                <span className="block text-sm font-medium">Send configured emails &amp; notifications</span>
+                <span className="block text-[11px] text-slate-400">
+                  Off by default so a bulk import stays silent. Turn on to email assignees and post assignment
+                  notifications for imported records, just like creating them one by one.
+                </span>
+              </span>
+            </label>
+          )}
 
           <input
             ref={fileRef}

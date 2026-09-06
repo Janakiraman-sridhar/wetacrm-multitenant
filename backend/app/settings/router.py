@@ -13,7 +13,7 @@ from app.services import storage
 from app.services.pdf import document_pdf, sample_document
 from app.settings.models import EmailTemplate, Setting, Tag
 from app.settings.schemas import (
-    EmailTemplateOut, EmailTemplateUpdate, SettingOut, SettingUpdate, TagCreate, TagOut,
+    EmailTemplateOut, EmailTemplateUpdate, SettingOut, SettingUpdate, TagCreate, TagOut, TagUpdate,
 )
 from app.users.models import User
 
@@ -148,6 +148,8 @@ TEMPLATE_VARIABLES: dict[str, list[dict]] = {
     "welcome": [
         {"key": "first_name", "label": "User · First name", "sample": "Priya"},
         {"key": "email", "label": "User · Email address", "sample": "priya@company.com"},
+        {"key": "app_url", "label": "Application URL", "sample": "https://crm.example.com"},
+        {"key": "logo_html", "label": "Application logo (image)", "sample": ""},
     ],
     "password_reset": [
         {"key": "first_name", "label": "User · First name", "sample": "Priya"},
@@ -206,6 +208,20 @@ def create_tag(payload: TagCreate, db: Session = Depends(get_db), _: User = Depe
         raise AppError("Tag already exists", 409)
     tag = Tag(name=payload.name, color=payload.color)
     db.add(tag)
+    db.commit()
+    return tag
+
+
+@router.patch("/tags/{tag_id}", response_model=TagOut)
+def update_tag(tag_id: str, payload: TagUpdate, db: Session = Depends(get_db), _: User = Depends(require_perm("settings:write"))):
+    tag = get_or_404(db, Tag, tag_id, "Tag")
+    data = payload.model_dump(exclude_unset=True)
+    if data.get("name") and data["name"] != tag.name:
+        if db.scalar(select(Tag).where(Tag.name == data["name"], Tag.id != tag.id)):
+            raise AppError("Tag already exists", 409)
+    for field, value in data.items():
+        if value is not None:
+            setattr(tag, field, value)
     db.commit()
     return tag
 

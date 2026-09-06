@@ -2,7 +2,17 @@ import { useQuery } from "@tanstack/react-query";
 
 import type { SelectOption } from "@/components/CrudPage";
 import { api } from "@/lib/api";
-import type { Company, Contact, DealStage, LeadSource, Page, Product, UserBrief } from "@/types";
+import type { Company, Contact, DealStage, LeadSource, Page, Product, Tag, UserBrief } from "@/types";
+
+/** Configured product/service tags (Settings → Tags), as multi-select options keyed by name. */
+export function useTagOptions(): SelectOption[] {
+  const { data } = useQuery({
+    queryKey: ["options", "tags"],
+    queryFn: async () => (await api.get<Tag[]>("/settings/tags")).data,
+    staleTime: 60_000,
+  });
+  return (data ?? []).map((t) => ({ value: t.name, label: t.name }));
+}
 
 export function useUserOptions(): SelectOption[] {
   const { data } = useQuery({

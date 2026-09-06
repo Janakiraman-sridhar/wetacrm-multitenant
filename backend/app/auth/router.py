@@ -86,7 +86,7 @@ def forgot_password(payload: ForgotPasswordIn, db: Session = Depends(get_db)):
     user = db.scalar(select(User).where(User.email == payload.email))
     if user and user.is_active:
         token = _create_token(user.id, "reset", timedelta(minutes=30))
-        origin = settings.cors_origin_list[0] if settings.cors_origin_list else "http://localhost:5173"
+        origin = settings.public_app_url
         send_templated(db, user.email, "password_reset",
                        {"first_name": user.first_name, "reset_link": f"{origin}/reset-password?token={token}"})
     # Same response either way — do not leak which emails exist.

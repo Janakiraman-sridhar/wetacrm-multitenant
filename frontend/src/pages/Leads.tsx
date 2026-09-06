@@ -10,7 +10,7 @@ import { useToast } from "@/context/ToastContext";
 import { api, errorMessage } from "@/lib/api";
 import { FilterFieldDef } from "@/lib/filters";
 import { formatDate, formatDateTime, fullName } from "@/lib/format";
-import { useSourceOptions, useUserOptions } from "@/lib/options";
+import { useSourceOptions, useTagOptions, useUserOptions } from "@/lib/options";
 import { numDefault, optEmail, optStr, reqStr } from "@/lib/zh";
 import type { Lead } from "@/types";
 
@@ -26,11 +26,12 @@ const schema = z.object({
   assigned_to_id: optStr,
   follow_up_at: optStr,
   notes: optStr,
+  tags: z.array(z.string()).default([]),
 });
 
 const defaults = {
   title: "", contact_name: "", email: "", phone: "", company_name: "",
-  source_id: "", status: "new", score: 0, assigned_to_id: "", follow_up_at: "", notes: "",
+  source_id: "", status: "new", score: 0, assigned_to_id: "", follow_up_at: "", notes: "", tags: [] as string[],
 };
 
 const STATUS_OPTIONS = ["new", "contacted", "qualified", "unqualified", "converted"].map((s) => ({
@@ -74,6 +75,22 @@ const leadExtraColumns = [
       ),
   },
   {
+    key: "tags",
+    header: "Tags",
+    render: (l: Lead) =>
+      l.tags?.length ? (
+        <span className="flex max-w-52 flex-wrap gap-1">
+          {l.tags.map((t) => (
+            <span key={t} className="badge bg-primary-50 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
+              {t}
+            </span>
+          ))}
+        </span>
+      ) : (
+        "—"
+      ),
+  },
+  {
     key: "notes",
     header: "Notes",
     render: (l: Lead) => (
@@ -87,6 +104,7 @@ const leadExtraColumns = [
 export default function Leads() {
   const users = useUserOptions();
   const sources = useSourceOptions();
+  const tags = useTagOptions();
 
   const filterFields: FilterFieldDef[] = [
     { key: "status", label: "Status", type: "select", options: STATUS_OPTIONS },
@@ -124,6 +142,7 @@ export default function Leads() {
     { name: "score", label: "Score (0–100)", type: "number" },
     { name: "assigned_to_id", label: "Assigned to", type: "select", options: users },
     { name: "follow_up_at", label: "Follow-up", type: "datetime-local" },
+    { name: "tags", label: "Products / services (tags)", type: "multiselect", options: tags, colSpan: 2, placeholder: "Tag products or services…" },
     { name: "notes", label: "Notes", type: "textarea", colSpan: 2 },
   ];
 
@@ -144,6 +163,7 @@ export default function Leads() {
           source_id: l.source_id ?? "",
           assigned_to_id: l.assigned_to_id ?? "",
           follow_up_at: l.follow_up_at ? l.follow_up_at.slice(0, 16) : "",
+          tags: l.tags ?? [],
         })}
         searchPlaceholder="Search leads…"
         columns={leadDefaultColumns}

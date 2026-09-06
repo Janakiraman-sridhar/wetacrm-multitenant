@@ -4,7 +4,7 @@ import { CrudPage, FieldDef } from "@/components/CrudPage";
 import { Avatar } from "@/components/ui";
 import { FilterFieldDef } from "@/lib/filters";
 import { formatDate, fullName } from "@/lib/format";
-import { useUserOptions } from "@/lib/options";
+import { useTagOptions, useUserOptions } from "@/lib/options";
 import { optEmail, optStr, reqStr } from "@/lib/zh";
 import type { Company } from "@/types";
 
@@ -22,15 +22,17 @@ const schema = z.object({
   postal_code: optStr,
   notes: optStr,
   owner_id: optStr,
+  tags: z.array(z.string()).default([]),
 });
 
 const defaults = {
   name: "", industry: "", website: "", gst_number: "", phone: "", email: "",
-  address: "", city: "", state: "", country: "", postal_code: "", notes: "", owner_id: "",
+  address: "", city: "", state: "", country: "", postal_code: "", notes: "", owner_id: "", tags: [] as string[],
 };
 
 export default function Companies() {
   const users = useUserOptions();
+  const tags = useTagOptions();
 
   const filterFields: FilterFieldDef[] = [
     { key: "industry", label: "Industry", type: "text" },
@@ -53,6 +55,7 @@ export default function Companies() {
     { name: "state", label: "State", section: "Address" },
     { name: "country", label: "Country", section: "Address" },
     { name: "postal_code", label: "Postal code", section: "Address" },
+    { name: "tags", label: "Products / services (tags)", type: "multiselect", options: tags, colSpan: 2, section: "Additional", placeholder: "Tag products or services…" },
     { name: "notes", label: "Notes", type: "textarea", colSpan: 2, section: "Additional", placeholder: "Anything the team should know about this account…" },
   ];
 
@@ -132,7 +135,7 @@ export default function Companies() {
       schema={schema}
       defaults={defaults}
       fields={fields}
-      toForm={(c) => ({ ...c, owner_id: c.owner_id ?? "" })}
+      toForm={(c) => ({ ...c, owner_id: c.owner_id ?? "", tags: c.tags ?? [] })}
       searchPlaceholder="Search companies…"
       columns={defaultColumns}
       allColumns={[...defaultColumns, ...extraColumns]}

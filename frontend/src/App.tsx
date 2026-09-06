@@ -8,9 +8,11 @@ import Companies from "@/pages/Companies";
 import Contacts from "@/pages/Contacts";
 import Dashboard from "@/pages/Dashboard";
 import Deals from "@/pages/Deals";
+import ForgotPassword from "@/pages/ForgotPassword";
 import Invoices from "@/pages/Invoices";
 import Leads from "@/pages/Leads";
 import Login from "@/pages/Login";
+import ResetPassword from "@/pages/ResetPassword";
 import Pipeline from "@/pages/Pipeline";
 import Products from "@/pages/Products";
 import Projects from "@/pages/Projects";
@@ -31,6 +33,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route
         path="/"
         element={

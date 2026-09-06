@@ -15,11 +15,29 @@ log = logging.getLogger("weta.seed")
 
 DEFAULT_LEAD_SOURCES = ["Website", "Referral", "Exhibition", "Cold Call", "Social Media", "Email Campaign", "Advertisement", "Other"]
 
+# The original welcome body, kept so we can safely upgrade unmodified copies
+# on existing databases (never overwriting a template the user has edited).
+WELCOME_BODY_V1 = "<p>Hi {first_name},</p><p>Your {app_name} account is ready. Sign in with <b>{email}</b>.</p>"
+
+WELCOME_BODY = (
+    '<div style="font-family:Arial,Helvetica,sans-serif;color:#0f172a;line-height:1.6">'
+    "{logo_html}"
+    "<p>Hi {first_name},</p>"
+    "<p>Your <b>{app_name}</b> account is ready. Sign in with <b>{email}</b>.</p>"
+    '<p style="margin:22px 0">'
+    '<a href="{app_url}" style="display:inline-block;background:#4F46E5;color:#ffffff;'
+    'text-decoration:none;padding:11px 22px;border-radius:8px;font-weight:600">Open {app_name}</a>'
+    "</p>"
+    '<p style="color:#64748b;font-size:13px">Or paste this link into your browser: '
+    '<a href="{app_url}" style="color:#4F46E5">{app_url}</a></p>'
+    "</div>"
+)
+
 DEFAULT_EMAIL_TEMPLATES = [
     {
         "name": "welcome",
         "subject": "Welcome to {app_name}",
-        "body_html": "<p>Hi {first_name},</p><p>Your {app_name} account is ready. Sign in with <b>{email}</b>.</p>",
+        "body_html": WELCOME_BODY,
         "description": "Sent when a new user account is created",
     },
     {
@@ -132,5 +150,11 @@ def run(db: Session) -> None:
     for tpl in DEFAULT_EMAIL_TEMPLATES:
         if tpl["name"] not in existing_templates:
             db.add(EmailTemplate(**tpl))
+
+    # Upgrade the built-in welcome template to the branded version, but only when
+    # it still holds the original default (so a customised template is untouched).
+    welcome = db.scalar(select(EmailTemplate).where(EmailTemplate.name == "welcome"))
+    if welcome and welcome.body_html == WELCOME_BODY_V1:
+        welcome.body_html = WELCOME_BODY
 
     db.commit()

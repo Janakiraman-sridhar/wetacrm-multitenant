@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.database import seed
 from app.database.base import Base
+from app.database.ensure_schema import ensure_columns
 from app.database.session import SessionLocal, engine
 from app.notifications.socket import capture_loop, sio
 
@@ -41,6 +42,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname
 async def lifespan(app: FastAPI):
     capture_loop()
     Base.metadata.create_all(engine)
+    ensure_columns(engine)
     with SessionLocal() as db:
         seed.run(db)
     yield

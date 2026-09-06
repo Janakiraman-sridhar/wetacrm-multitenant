@@ -64,9 +64,43 @@ def contact_name(c) -> str:
     return f"{c.first_name} {c.last_name}".strip() if c else ""
 
 
+# --- optional side-effects (assignment emails/notifications) ---------------
+# Queued on opts.pending and fired only after the whole import commits, and only
+# when the importer chose to send configured emails.
+
+def _queue_lead_assignment(db, opts, lead, actor) -> None:
+    if not opts.send_emails or not lead.assigned_to_id or lead.assigned_to_id == actor.id:
+        return
+
+    def effect():
+        from app.notifications.service import notify
+        from app.services.email import send_templated
+
+        notify(db, lead.assigned_to_id, "lead_assigned", f"Lead assigned: {lead.title}",
+               f"Assigned by {actor.full_name}", f"/leads?id={lead.id}")
+        assignee = db.get(User, lead.assigned_to_id)
+        if assignee:
+            send_templated(db, assignee.email, "lead_assigned",
+                           {"first_name": assignee.first_name, "lead_title": lead.title})
+
+    opts.pending.append(effect)
+
+
+def _queue_notification(db, opts, *, user_id, actor, type_, title, body, link) -> None:
+    if not opts.send_emails or not user_id or user_id == actor.id:
+        return
+
+    def effect():
+        from app.notifications.service import notify
+
+        notify(db, user_id, type_, title, body, link)
+
+    opts.pending.append(effect)
+
+
 # --- companies -------------------------------------------------------------
 
-def _create_company(db, user, row):
+def _create_company(db, user, row, opts):
     c = Company(
         name=require(row, "name", "Company name"),
         industry=as_str(row.get("industry")),
@@ -121,7 +155,7 @@ COMPANY_SPEC = IOSpec(
 
 # --- contacts --------------------------------------------------------------
 
-def _create_contact(db, user, row):
+def _create_contact(db, user, row, opts):
     c = Contact(
         first_name=require(row, "first_name", "First name"),
         last_name=as_str(row.get("last_name")) or "",
@@ -168,7 +202,7 @@ CONTACT_SPEC = IOSpec(
 
 # --- leads -----------------------------------------------------------------
 
-def _create_lead(db, user, row):
+def _create_lead(db, user, row, opts):
     status = (as_str(row.get("status")) or "new").lower()
     if status not in LEAD_STATUSES:
         from app.core.exceptions import AppError
@@ -185,9 +219,11 @@ def _create_lead(db, user, row):
         assigned_to_id=(u := find_user(db, row.get("assigned_to_email"))) and u.id,
         follow_up_at=as_datetime(row.get("follow_up_at"), "follow-up"),
         notes=as_str(row.get("notes")),
+        tags=as_list(row.get("tags")),
     )
     db.add(lead)
     audit(db, user.id, "import", "lead", None, {"title": lead.title})
+    _queue_lead_assignment(db, opts, lead, user)
 
 
 LEAD_SPEC = IOSpec(
@@ -203,6 +239,7 @@ LEAD_SPEC = IOSpec(
         IOColumn("score", "Score"),
         IOColumn("assigned_to_email", "Assigned To Email", lambda l: l.assigned_to.email if l.assigned_to else ""),
         IOColumn("follow_up_at", "Follow-up At"),
+        IOColumn("tags", "Tags"),
         IOColumn("notes", "Notes"),
         IOColumn("created_at", "Created At"),
     ],
@@ -213,14 +250,14 @@ LEAD_SPEC = IOSpec(
         "title": "Acme ERP rollout", "company_name": "Acme Industries", "contact_name": "Priya Sharma",
         "email": "priya@acme.example", "phone": "+91 98765 43210", "source": "Exhibition",
         "status": "new", "score": "70", "assigned_to_email": "admin@wetacrm.com",
-        "follow_up_at": "2026-10-01 10:00", "notes": "Met at trade show",
+        "follow_up_at": "2026-10-01 10:00", "tags": "ERP; hot", "notes": "Met at trade show",
     },
 )
 
 
 # --- deals -----------------------------------------------------------------
 
-def _create_deal(db, user, row):
+def _create_deal(db, user, row, opts):
     from app.core.exceptions import AppError
     stage = find_stage(db, row.get("stage"))
     if not stage:
@@ -241,10 +278,14 @@ def _create_deal(db, user, row):
         owner_id=(o := find_user(db, row.get("owner_email"))) and o.id,
         competitors=as_str(row.get("competitors")),
         notes=as_str(row.get("notes")),
+        tags=as_list(row.get("tags")),
         status="won" if stage.is_won else "lost" if stage.is_lost else "open",
     )
     db.add(deal)
     audit(db, user.id, "import", "deal", None, {"title": deal.title})
+    _queue_notification(db, opts, user_id=deal.owner_id, actor=user, type_="deal_updated",
+                        title=f"Deal assigned: {deal.title}", body=f"Assigned by {user.full_name}",
+                        link=f"/deals?id={deal.id}")
 
 
 DEAL_SPEC = IOSpec(
@@ -261,6 +302,7 @@ DEAL_SPEC = IOSpec(
         IOColumn("owner_email", "Owner Email", lambda d: d.owner.email if d.owner else ""),
         IOColumn("expected_close_date", "Expected Close Date"),
         IOColumn("competitors", "Competitors"),
+        IOColumn("tags", "Tags"),
         IOColumn("notes", "Notes"),
         IOColumn("created_at", "Created At"),
     ],
@@ -271,14 +313,14 @@ DEAL_SPEC = IOSpec(
         "title": "Acme ERP implementation", "value": "850000", "currency": "INR", "stage": "Proposal",
         "probability": "65", "company": "Acme Industries", "contact": "Priya Sharma",
         "owner_email": "admin@wetacrm.com", "expected_close_date": "2026-11-30",
-        "competitors": "OtherCRM", "notes": "",
+        "competitors": "OtherCRM", "tags": "ERP; enterprise", "notes": "",
     },
 )
 
 
 # --- tasks -----------------------------------------------------------------
 
-def _create_task(db, user, row):
+def _create_task(db, user, row, opts):
     from app.core.exceptions import AppError
     priority = (as_str(row.get("priority")) or "medium").lower()
     status = (as_str(row.get("status")) or "todo").lower()
@@ -323,7 +365,7 @@ TASK_SPEC = IOSpec(
 
 # --- projects --------------------------------------------------------------
 
-def _create_project(db, user, row):
+def _create_project(db, user, row, opts):
     from app.core.exceptions import AppError
     status = (as_str(row.get("status")) or "planned").lower()
     if status not in PROJECT_STATUSES:
@@ -368,7 +410,7 @@ PROJECT_SPEC = IOSpec(
 
 # --- support tickets -------------------------------------------------------
 
-def _create_ticket(db, user, row):
+def _create_ticket(db, user, row, opts):
     from app.core.exceptions import AppError
     priority = (as_str(row.get("priority")) or "medium").lower()
     status = (as_str(row.get("status")) or "open").lower()
@@ -389,6 +431,9 @@ def _create_ticket(db, user, row):
     )
     db.add(ticket)
     audit(db, user.id, "import", "ticket", None, {"subject": ticket.subject})
+    _queue_notification(db, opts, user_id=ticket.assigned_to_id, actor=user, type_="ticket_assigned",
+                        title=f"Ticket assigned: {ticket.subject}",
+                        body=f"{ticket.number} — {ticket.priority} priority", link="/support")
 
 
 SUPPORT_SPEC = IOSpec(
@@ -422,7 +467,7 @@ SUPPORT_SPEC = IOSpec(
 def _billing_import(kind: str):
     """Build an import_rows that groups line-item rows into documents."""
 
-    def run(db, user, rows) -> ImportResult:
+    def run(db, user, rows, opts) -> ImportResult:
         result = ImportResult()
         groups: "OrderedDict[str, dict]" = OrderedDict()
         for i, row in enumerate(rows, start=2):

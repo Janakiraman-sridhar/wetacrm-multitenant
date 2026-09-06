@@ -43,6 +43,7 @@ class DealBase(ORMModel):
     owner_id: str | None = None
     competitors: str | None = None
     notes: str | None = None
+    tags: list[str] = []
 
 
 class DealCreate(DealBase):
@@ -61,6 +62,7 @@ class DealUpdate(ORMModel):
     owner_id: str | None = None
     competitors: str | None = None
     notes: str | None = None
+    tags: list[str] | None = None
 
 
 class DealOut(DealBase):

@@ -45,3 +45,8 @@ class TagOut(ORMModel):
 class TagCreate(ORMModel):
     name: str = Field(min_length=1, max_length=100)
     color: str = "#4F46E5"
+
+
+class TagUpdate(ORMModel):
+    name: str | None = Field(None, min_length=1, max_length=100)
+    color: str | None = None

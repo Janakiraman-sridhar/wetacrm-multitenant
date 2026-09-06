@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import BaseModel
@@ -44,6 +44,7 @@ class Deal(BaseModel):
     notes: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(10), default="open", index=True)  # open|won|lost
     closed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    tags: Mapped[list] = mapped_column(JSON, default=list)
 
     stage = relationship("DealStage", lazy="joined")
     company = relationship("Company", lazy="joined")

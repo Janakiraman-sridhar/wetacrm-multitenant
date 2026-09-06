@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, Response, UploadFile
+from fastapi import APIRouter, Depends, Form, Query, Response, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user
@@ -7,7 +7,7 @@ from app.core.permissions import has_permission
 from app.database.session import get_db
 from app.filtering import FILTERS, apply_filters
 from app.io.registry import SPECS
-from app.io.spec import build_csv, build_template_csv, parse_csv
+from app.io.spec import ImportOptions, build_csv, build_template_csv, parse_csv
 from app.users.models import User
 
 router = APIRouter(prefix="/io", tags=["import-export"])
@@ -73,7 +73,11 @@ def template_entity(entity: str, user: User = Depends(get_current_user)):
 
 @router.post("/{entity}/import")
 async def import_entity(
-    entity: str, file: UploadFile, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+    entity: str,
+    file: UploadFile,
+    send_emails: bool = Form(False),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     spec = _spec(entity)
     _require(user, spec.module, "write")
@@ -85,5 +89,5 @@ async def import_entity(
     rows = parse_csv(raw, spec)
     if not rows:
         raise AppError("No data rows found — the file needs a header row and at least one record", 400)
-    result = spec.import_rows(db, user, rows)
+    result = spec.import_rows(db, user, rows, ImportOptions(send_emails=send_emails))
     return result.as_dict()

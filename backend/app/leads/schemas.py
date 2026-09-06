@@ -22,6 +22,7 @@ class LeadBase(ORMModel):
     assigned_to_id: str | None = None
     notes: str | None = None
     follow_up_at: datetime | None = None
+    tags: list[str] = []
 
 
 class LeadCreate(LeadBase):
@@ -40,6 +41,7 @@ class LeadUpdate(ORMModel):
     assigned_to_id: str | None = None
     notes: str | None = None
     follow_up_at: datetime | None = None
+    tags: list[str] | None = None
 
 
 class LeadOut(LeadBase):

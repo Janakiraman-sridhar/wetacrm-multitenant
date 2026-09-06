@@ -42,13 +42,28 @@ class ImportResult:
 
 
 @dataclass
+class ImportOptions:
+    """Runtime options for an import run.
+
+    `send_emails` opts the import into the same assignment notifications/emails a
+    normal create would fire (default off — a mass import stays silent). Per-row
+    creators append deferred side-effects to `pending`; the runner fires them only
+    after the whole import has committed, so no email goes out for a row that
+    later rolls back.
+    """
+
+    send_emails: bool = False
+    pending: list = field(default_factory=list)
+
+
+@dataclass
 class IOSpec:
     module: str                    # permission module, e.g. "companies"
     label: str                     # human label, e.g. "Companies"
     filename: str                  # base download filename
     columns: list[IOColumn]
     base_select: Callable[[], Any]  # returns an ORM Select (unexecuted) for export/filtering
-    import_rows: Callable[[Session, User, list[dict]], ImportResult]
+    import_rows: Callable[[Session, User, list[dict], "ImportOptions"], ImportResult]
     sample: dict                   # {column key: example string} for the template
     filter_key: str = ""           # entity key into app.filtering.FILTERS
     expand: Callable[[list], Iterable] | None = None  # post-process fetched objects into export rows
@@ -114,21 +129,23 @@ def parse_csv(raw: bytes, spec: IOSpec) -> list[dict]:
 
 # --- import helpers --------------------------------------------------------
 
-def row_importer(create_fn: Callable[[Session, User, dict], None]):
+def row_importer(create_fn: Callable[[Session, User, dict, "ImportOptions"], None]):
     """Wrap a per-row create function into an import_rows runner.
 
     Each row is inserted inside its own SAVEPOINT, so a bad row fails on its own
-    without discarding the rows before it.
+    without discarding the rows before it. Any side-effects a creator queued on
+    `opts.pending` (assignment emails/notifications) run only after the whole
+    import commits.
     """
 
-    def run(db: Session, user: User, rows: list[dict]) -> ImportResult:
+    def run(db: Session, user: User, rows: list[dict], opts: "ImportOptions") -> ImportResult:
         result = ImportResult()
         for i, row in enumerate(rows, start=2):  # row 1 is the header
             if not any(v for v in row.values()):
                 continue  # skip blank lines
             try:
                 with db.begin_nested():
-                    create_fn(db, user, row)
+                    create_fn(db, user, row, opts)
                     db.flush()
                 result.created += 1
             except AppError as e:
@@ -138,9 +155,24 @@ def row_importer(create_fn: Callable[[Session, User, dict], None]):
                 result.failed += 1
                 result.errors.append({"row": i, "message": str(e)[:200]})
         db.commit()
+        run_pending(db, opts)
         return result
 
     return run
+
+
+def run_pending(db: Session, opts: "ImportOptions") -> None:
+    """Fire queued post-commit side-effects (notifications/emails), then commit."""
+    if not opts.pending:
+        return
+    for effect in opts.pending:
+        try:
+            effect()
+        except Exception:  # noqa: BLE001 — a failed notification must not fail the import
+            import logging
+
+            logging.getLogger("weta.io").exception("Import side-effect failed")
+    db.commit()
 
 
 # --- value parsers (raise AppError with a friendly message on bad input) ----

@@ -4,7 +4,7 @@ import { CrudPage, FieldDef } from "@/components/CrudPage";
 import { StatusBadge } from "@/components/ui";
 import { FilterFieldDef } from "@/lib/filters";
 import { formatDate, formatDateTime, formatMoney, fullName } from "@/lib/format";
-import { useCompanyOptions, useContactOptions, useStageOptions, useUserOptions } from "@/lib/options";
+import { useCompanyOptions, useContactOptions, useStageOptions, useTagOptions, useUserOptions } from "@/lib/options";
 import { numDefault, optStr, reqStr } from "@/lib/zh";
 import type { Deal } from "@/types";
 
@@ -19,11 +19,12 @@ const schema = z.object({
   owner_id: optStr,
   competitors: optStr,
   notes: optStr,
+  tags: z.array(z.string()).default([]),
 });
 
 const defaults = {
   title: "", value: 0, currency: "INR", expected_close_date: "", stage_id: "",
-  company_id: "", contact_id: "", owner_id: "", competitors: "", notes: "",
+  company_id: "", contact_id: "", owner_id: "", competitors: "", notes: "", tags: [] as string[],
 };
 
 const dealDefaultColumns = [
@@ -61,6 +62,22 @@ const dealExtraColumns = [
   { key: "closed_at", header: "Closed at", render: (d: Deal) => formatDateTime((d as any).closed_at) },
   { key: "created_at", header: "Created", sortable: true, render: (d: Deal) => formatDate(d.created_at) },
   {
+    key: "tags",
+    header: "Tags",
+    render: (d: Deal) =>
+      d.tags?.length ? (
+        <span className="flex max-w-52 flex-wrap gap-1">
+          {d.tags.map((t) => (
+            <span key={t} className="badge bg-primary-50 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
+              {t}
+            </span>
+          ))}
+        </span>
+      ) : (
+        "—"
+      ),
+  },
+  {
     key: "notes",
     header: "Notes",
     render: (d: Deal) => (
@@ -76,6 +93,7 @@ export default function Deals() {
   const companies = useCompanyOptions();
   const contacts = useContactOptions();
   const stages = useStageOptions();
+  const tags = useTagOptions();
 
   const filterFields: FilterFieldDef[] = [
     {
@@ -100,6 +118,7 @@ export default function Deals() {
     { name: "contact_id", label: "Contact", type: "select", options: contacts },
     { name: "owner_id", label: "Owner", type: "select", options: users },
     { name: "competitors", label: "Competitors" },
+    { name: "tags", label: "Products / services (tags)", type: "multiselect", options: tags, colSpan: 2, placeholder: "Tag products or services…" },
     { name: "notes", label: "Notes", type: "textarea", colSpan: 2 },
   ];
 
@@ -122,6 +141,7 @@ export default function Deals() {
         contact_id: d.contact_id ?? "",
         owner_id: d.owner_id ?? "",
         expected_close_date: d.expected_close_date ?? "",
+        tags: d.tags ?? [],
       })}
       searchPlaceholder="Search deals…"
       columns={dealDefaultColumns}

@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
     cors_origins: str = "http://localhost:5173"
+    # Public URL of the frontend app, used in emails (welcome, password reset).
+    # Falls back to the first CORS origin when left blank.
+    app_url: str = ""
 
     admin_email: str = "admin@wetacrm.com"
     admin_password: str = "admin123"
@@ -38,6 +41,14 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def public_app_url(self) -> str:
+        """Base URL of the frontend for links in emails."""
+        if self.app_url.strip():
+            return self.app_url.strip().rstrip("/")
+        origins = self.cors_origin_list
+        return (origins[0] if origins else "http://localhost:5173").rstrip("/")
 
 
 @lru_cache

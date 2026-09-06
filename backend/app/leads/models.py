@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import BaseModel
@@ -29,6 +29,7 @@ class Lead(BaseModel):
     notes: Mapped[str | None] = mapped_column(Text)
     follow_up_at: Mapped[datetime | None] = mapped_column(DateTime)
     converted_deal_id: Mapped[str | None] = mapped_column(String(32))
+    tags: Mapped[list] = mapped_column(JSON, default=list)
 
     source = relationship("LeadSource", lazy="joined")
     assigned_to = relationship("User", lazy="joined")

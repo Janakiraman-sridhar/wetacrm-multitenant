@@ -11,6 +11,7 @@ import { DatePicker } from "@/components/DatePicker";
 import { FiltersBar } from "@/components/FiltersBar";
 import { ImportExport } from "@/components/ImportExport";
 import { ConfirmDialog, Modal } from "@/components/Modal";
+import { MultiSelect } from "@/components/MultiSelect";
 import { Select } from "@/components/Select";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
@@ -26,7 +27,7 @@ export interface SelectOption {
 export interface FieldDef {
   name: string;
   label: string;
-  type?: "text" | "email" | "number" | "textarea" | "select" | "date" | "datetime-local" | "checkbox" | "password";
+  type?: "text" | "email" | "number" | "textarea" | "select" | "multiselect" | "date" | "datetime-local" | "checkbox" | "password";
   options?: SelectOption[];
   placeholder?: string;
   colSpan?: 1 | 2;
@@ -59,6 +60,19 @@ function FieldControl({ field: f, register, control, errors }: { field: FieldDef
               options={f.options ?? []}
               placeholder={f.placeholder ?? "Select…"}
               error={!!error}
+            />
+          )}
+        />
+      ) : f.type === "multiselect" ? (
+        <Controller
+          name={f.name}
+          control={control}
+          render={({ field: rhf }) => (
+            <MultiSelect
+              value={Array.isArray(rhf.value) ? rhf.value : []}
+              onChange={rhf.onChange}
+              options={f.options ?? []}
+              placeholder={f.placeholder ?? "Select…"}
             />
           )}
         />

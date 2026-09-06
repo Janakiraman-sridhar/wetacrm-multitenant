@@ -7,7 +7,7 @@ import { Avatar } from "@/components/ui";
 import { api } from "@/lib/api";
 import { FilterFieldDef } from "@/lib/filters";
 import { formatDate, fullName } from "@/lib/format";
-import { useCompanyOptions, useUserOptions } from "@/lib/options";
+import { useCompanyOptions, useTagOptions, useUserOptions } from "@/lib/options";
 import { optStr, reqStr } from "@/lib/zh";
 import type { Company, Contact } from "@/types";
 
@@ -92,12 +92,13 @@ const schema = z.object({
   twitter: optStr,
   notes: optStr,
   owner_id: optStr,
+  tags: z.array(z.string()).default([]),
 });
 
 const defaults = {
   first_name: "", last_name: "", position: "", company_id: "", email_primary: "",
   email_secondary: "", phone_primary: "", phone_secondary: "", linkedin: "", twitter: "",
-  notes: "", owner_id: "",
+  notes: "", owner_id: "", tags: [] as string[],
 };
 
 /** The form uses flat fields; convert to/from the API's array-based shape. */
@@ -168,6 +169,7 @@ const contactExtraColumns = [
 export default function Contacts() {
   const users = useUserOptions();
   const companies = useCompanyOptions();
+  const tags = useTagOptions();
 
   const filterFields: FilterFieldDef[] = [
     { key: "position", label: "Position", type: "text" },
@@ -195,6 +197,7 @@ export default function Contacts() {
     { name: "linkedin", label: "LinkedIn", placeholder: "https://linkedin.com/in/…" },
     { name: "twitter", label: "X / Twitter" },
     { name: "owner_id", label: "Owner", type: "select", options: users },
+    { name: "tags", label: "Products / services (tags)", type: "multiselect", options: tags, colSpan: 2, placeholder: "Tag products or services…" },
     { name: "notes", label: "Notes", type: "textarea", colSpan: 2 },
   ];
 
@@ -221,6 +224,7 @@ export default function Contacts() {
         twitter: c.social_links?.twitter ?? "",
         notes: c.notes ?? "",
         owner_id: c.owner?.id ?? "",
+        tags: c.tags ?? [],
       })}
       searchPlaceholder="Search contacts…"
       columns={contactDefaultColumns}

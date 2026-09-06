@@ -92,7 +92,14 @@ export interface Lead {
   notes?: string | null;
   follow_up_at?: string | null;
   converted_deal_id?: string | null;
+  tags?: string[];
   created_at: string;
+}
+
+export interface Tag {
+  id: string;
+  name: string;
+  color: string;
 }
 
 export interface DealStage {
@@ -123,6 +130,7 @@ export interface Deal {
   competitors?: string | null;
   notes?: string | null;
   status: string;
+  tags?: string[];
   created_at: string;
 }
 

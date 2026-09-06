@@ -10,9 +10,9 @@ import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { API_URL, api, errorMessage, tokenStore } from "@/lib/api";
 import { formatDate } from "@/lib/format";
-import type { AppSetting, DealStage, EmailTemplate, Page, Role, User } from "@/types";
+import type { AppSetting, DealStage, EmailTemplate, Page, Role, Tag, User } from "@/types";
 
-const TABS = ["Company", "Users", "Roles", "Pipeline", "Documents", "Email Templates", "System"] as const;
+const TABS = ["Company", "Users", "Roles", "Pipeline", "Tags", "Documents", "Email Templates", "System"] as const;
 
 export default function SettingsPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]>("Company");
@@ -42,6 +42,7 @@ export default function SettingsPage() {
       {tab === "Users" && <UsersTab />}
       {tab === "Roles" && <RolesTab />}
       {tab === "Pipeline" && <PipelineTab canWrite={hasPerm("settings:write")} />}
+      {tab === "Tags" && <TagsTab canWrite={hasPerm("settings:write")} />}
       {tab === "Documents" && <DocumentsTab canWrite={hasPerm("settings:write")} />}
       {tab === "Email Templates" && <TemplatesTab canWrite={hasPerm("settings:write")} />}
       {tab === "System" && <SystemTab />}
@@ -1420,6 +1421,144 @@ function TemplatesTab({ canWrite }: { canWrite: boolean }) {
           </button>
         </div>
       </Modal>
+    </div>
+  );
+}
+
+function TagsTab({ canWrite }: { canWrite: boolean }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [name, setName] = useState("");
+  const [color, setColor] = useState(ACCENT_PRESETS[0]);
+  const [deleting, setDeleting] = useState<Tag | null>(null);
+
+  const tags = useQuery({
+    queryKey: ["settings-tags"],
+    queryFn: async () => (await api.get<Tag[]>("/settings/tags")).data,
+  });
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["settings-tags"] });
+    queryClient.invalidateQueries({ queryKey: ["options", "tags"] }); // refresh the multi-select on records
+  };
+
+  const create = useMutation({
+    mutationFn: async () => (await api.post("/settings/tags", { name: name.trim(), color })).data,
+    onSuccess: () => {
+      toast("Tag added");
+      setName("");
+      invalidate();
+    },
+    onError: (err) => toast(errorMessage(err), "error"),
+  });
+
+  const update = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<Tag> }) =>
+      (await api.patch(`/settings/tags/${id}`, data)).data,
+    onSuccess: invalidate,
+    onError: (err) => {
+      toast(errorMessage(err), "error");
+      invalidate();
+    },
+  });
+
+  const remove = useMutation({
+    mutationFn: async (tag: Tag) => (await api.delete(`/settings/tags/${tag.id}`)).data,
+    onSuccess: () => {
+      toast("Tag deleted");
+      setDeleting(null);
+      invalidate();
+    },
+    onError: (err) => toast(errorMessage(err), "error"),
+  });
+
+  if (tags.isLoading) return <PageSpinner />;
+
+  return (
+    <div className="max-w-2xl space-y-4">
+      <div className="card overflow-hidden">
+        <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+          <h2 className="font-semibold">Tags — products &amp; services</h2>
+          <p className="mt-0.5 text-xs text-slate-400">
+            Define the products or services your team offers. They appear as a multi-select on Companies, Contacts,
+            Leads and Deals, so you can record what each customer is interested in or has bought.
+          </p>
+        </div>
+
+        <div className="p-3">
+          {(tags.data ?? []).length === 0 && (
+            <p className="px-2 py-6 text-center text-sm text-slate-400">No tags yet. Add your first product or service below.</p>
+          )}
+          {(tags.data ?? []).map((tag) => (
+            <div
+              key={tag.id}
+              className="group mb-2 flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-2.5 dark:border-slate-800 dark:bg-slate-900"
+            >
+              <label className="relative h-6 w-6 shrink-0 cursor-pointer overflow-hidden rounded-full ring-1 ring-slate-200 dark:ring-slate-700" title="Change color" style={{ background: tag.color }}>
+                <input
+                  type="color"
+                  className="absolute inset-0 cursor-pointer opacity-0"
+                  disabled={!canWrite}
+                  value={/^#[0-9a-fA-F]{6}$/.test(tag.color) ? tag.color : "#4F46E5"}
+                  onChange={(e) => update.mutate({ id: tag.id, data: { color: e.target.value } })}
+                />
+              </label>
+              <input
+                key={`${tag.id}-${tag.name}`}
+                defaultValue={tag.name}
+                disabled={!canWrite}
+                onBlur={(e) => {
+                  const v = e.target.value.trim();
+                  if (v && v !== tag.name) update.mutate({ id: tag.id, data: { name: v } });
+                }}
+                onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+                className="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-2 py-1.5 text-sm font-medium transition-colors hover:border-slate-200 focus:border-primary-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:hover:border-slate-700 dark:focus:bg-slate-800"
+              />
+              {canWrite && (
+                <button
+                  className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/30"
+                  title="Delete tag"
+                  onClick={() => setDeleting(tag)}
+                >
+                  <Trash2 size={15} />
+                </button>
+              )}
+            </div>
+          ))}
+
+          {canWrite && (
+            <div className="mt-1 flex items-center gap-2 rounded-xl border border-dashed border-slate-300 p-2.5 dark:border-slate-700">
+              <label className="relative h-6 w-6 shrink-0 cursor-pointer overflow-hidden rounded-full ring-1 ring-slate-200 dark:ring-slate-700" title="Pick a color" style={{ background: color }}>
+                <input
+                  type="color"
+                  className="absolute inset-0 cursor-pointer opacity-0"
+                  value={color}
+                  onChange={(e) => setColor(e.target.value)}
+                />
+              </label>
+              <input
+                className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-sm focus:outline-none"
+                placeholder="New product / service tag…"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && name.trim() && create.mutate()}
+              />
+              <button className="btn-primary !py-1.5" disabled={!name.trim() || create.isPending} onClick={() => create.mutate()}>
+                <Plus size={15} /> {create.isPending ? "Adding…" : "Add tag"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <ConfirmDialog
+        open={!!deleting}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => deleting && remove.mutate(deleting)}
+        title="Delete tag?"
+        message={`“${deleting?.name}” will be removed from the tag list. Records already tagged with it keep the label until you edit them.`}
+        busy={remove.isPending}
+      />
     </div>
   );
 }

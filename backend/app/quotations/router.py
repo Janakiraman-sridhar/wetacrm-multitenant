@@ -17,7 +17,7 @@ from app.invoices.schemas import InvoiceOut
 from app.quotations.models import QUOTATION_STATUSES, Quotation, QuotationItem
 from app.quotations.schemas import QuotationCreate, QuotationOut, QuotationUpdate, SendQuotationIn
 from app.services import billing, storage
-from app.services.email import send_templated
+from app.services.email import email_configured, send_templated
 from app.services.numbering import next_number
 from app.services.pdf import document_pdf
 from app.settings.models import Setting
@@ -131,13 +131,21 @@ def send_quotation(quotation_id: str, payload: SendQuotationIn, db: Session = De
     to = payload.to_email or (quotation.contact.emails[0] if quotation.contact and quotation.contact.emails else None)
     if not to:
         raise AppError("No recipient email — set one on the contact or pass to_email", 400)
+    if not email_configured():
+        raise AppError(
+            "Email isn't configured yet, so the quotation can't be sent. Add SMTP settings in the "
+            "backend environment (see Settings → System). You can still download the PDF and send it manually.",
+            400,
+        )
     profile = _company_profile(db)
     pdf = document_pdf("quotation", quotation, profile, _setting(db, "quotation_template"), _logo_bytes(db))
     contact_name = f"{quotation.contact.first_name}" if quotation.contact else "Customer"
-    send_templated(db, to, "quotation",
-                   {"contact_name": contact_name, "number": quotation.number,
-                    "total": f"{quotation.currency} {quotation.total}", "company_name": profile.get("name", "WeTa CRM")},
-                   attachments=[(f"{quotation.number}.pdf", pdf, "application/pdf")])
+    sent = send_templated(db, to, "quotation",
+                          {"contact_name": contact_name, "number": quotation.number,
+                           "total": f"{quotation.currency} {quotation.total}", "company_name": profile.get("name", "WeTa CRM")},
+                          attachments=[(f"{quotation.number}.pdf", pdf, "application/pdf")])
+    if not sent:
+        raise AppError("The quotation email could not be sent. Please check the SMTP settings and try again.", 502)
     if quotation.status == "draft":
         quotation.status = "sent"
     log_activity(db, "quotation", quotation.id, "email", f"Quotation emailed to {to}", user_id=user.id)

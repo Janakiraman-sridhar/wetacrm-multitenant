@@ -11,7 +11,7 @@ from app.core.permissions import ALL_PERMISSIONS, MODULES
 from app.core.schemas import Message, Page
 from app.core.security import hash_password
 from app.database.session import get_db
-from app.services.email import send_templated
+from app.services.email import send_welcome
 from app.users.models import Role, User
 from app.users.schemas import RoleCreate, RoleOut, RoleUpdate, UserCreate, UserOut, UserUpdate
 
@@ -54,7 +54,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), actor: User 
     audit(db, actor.id, "create", "user", user.id, {"email": payload.email})
     db.commit()
     if payload.send_welcome_email:
-        send_templated(db, user.email, "welcome", {"first_name": user.first_name, "email": user.email})
+        send_welcome(db, user)
     return user
 
 

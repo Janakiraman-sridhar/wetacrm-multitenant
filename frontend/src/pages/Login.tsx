@@ -1,6 +1,6 @@
 import { ArrowRight, ChartColumnBig, Eye, EyeOff, Lock, Mail, SquareKanban, Target } from "lucide-react";
 import { useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 
 import logoFull from "@/assets/logo.png";
 import logoFullDark from "@/assets/logo-dark.png";
@@ -148,8 +148,10 @@ export default function Login() {
             </button>
           </form>
 
-          <p className="mt-8 text-center text-xs text-slate-400">
-            Forgot your password? Ask an administrator to send you a reset link.
+          <p className="mt-8 text-center text-sm text-slate-400">
+            <Link to="/forgot-password" className="font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400">
+              Forgot your password?
+            </Link>
           </p>
         </div>
       </div>

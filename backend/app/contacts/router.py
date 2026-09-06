@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -8,6 +8,7 @@ from app.contacts.schemas import ContactCreate, ContactOut, ContactUpdate
 from app.core.crud import apply_updates, get_or_404
 from app.core.deps import require_perm
 from app.core.pagination import PageParams, apply_sort, page_params, paginate
+from app.filtering import FILTERS, apply_filters
 from app.core.schemas import Message, Page
 from app.database.session import get_db
 from app.services import search_sync
@@ -17,7 +18,7 @@ router = APIRouter(prefix="/contacts", tags=["contacts"])
 
 
 @router.get("", response_model=Page[ContactOut], dependencies=[Depends(require_perm("contacts:read"))])
-def list_contacts(
+def list_contacts(filters: str | None = Query(None), 
     company_id: str | None = None,
     params: PageParams = Depends(page_params),
     db: Session = Depends(get_db),
@@ -29,6 +30,7 @@ def list_contacts(
         q = f"%{params.search}%"
         stmt = stmt.where(or_(Contact.first_name.ilike(q), Contact.last_name.ilike(q), Contact.position.ilike(q)))
     stmt = apply_sort(stmt, Contact, params.sort)
+    stmt = apply_filters(stmt, FILTERS["contacts"], filters)
     return paginate(db, stmt, params)
 
 

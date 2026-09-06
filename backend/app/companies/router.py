@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -8,6 +8,7 @@ from app.companies.schemas import CompanyCreate, CompanyOut, CompanyUpdate
 from app.core.crud import apply_updates, get_or_404
 from app.core.deps import get_current_user, require_perm
 from app.core.pagination import PageParams, apply_sort, page_params, paginate
+from app.filtering import FILTERS, apply_filters
 from app.core.schemas import Message, Page
 from app.database.session import get_db
 from app.services import search_sync
@@ -17,11 +18,12 @@ router = APIRouter(prefix="/companies", tags=["companies"])
 
 
 @router.get("", response_model=Page[CompanyOut], dependencies=[Depends(require_perm("companies:read"))])
-def list_companies(params: PageParams = Depends(page_params), db: Session = Depends(get_db)):
+def list_companies(filters: str | None = Query(None), params: PageParams = Depends(page_params), db: Session = Depends(get_db)):
     stmt = select(Company)
     if params.search:
         q = f"%{params.search}%"
         stmt = stmt.where(or_(Company.name.ilike(q), Company.industry.ilike(q), Company.city.ilike(q), Company.email.ilike(q)))
+    stmt = apply_filters(stmt, FILTERS["companies"], filters)
     stmt = apply_sort(stmt, Company, params.sort)
     return paginate(db, stmt, params)
 

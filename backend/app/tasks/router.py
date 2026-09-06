@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -7,6 +7,7 @@ from app.core.crud import apply_updates, get_or_404
 from app.core.deps import require_perm
 from app.core.exceptions import AppError
 from app.core.pagination import PageParams, apply_sort, page_params, paginate
+from app.filtering import FILTERS, apply_filters
 from app.core.schemas import Message, Page
 from app.database.session import get_db
 from app.notifications.service import notify
@@ -26,7 +27,7 @@ def _validate(data: dict) -> None:
 
 
 @router.get("", response_model=Page[TaskOut], dependencies=[Depends(require_perm("tasks:read"))])
-def list_tasks(
+def list_tasks(filters: str | None = Query(None), 
     status: str | None = None,
     priority: str | None = None,
     assigned_to_id: str | None = None,
@@ -50,6 +51,7 @@ def list_tasks(
         q = f"%{params.search}%"
         stmt = stmt.where(or_(Task.title.ilike(q), Task.description.ilike(q)))
     stmt = apply_sort(stmt, Task, params.sort)
+    stmt = apply_filters(stmt, FILTERS["tasks"], filters)
     return paginate(db, stmt, params)
 
 

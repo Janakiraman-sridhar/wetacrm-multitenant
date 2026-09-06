@@ -5,6 +5,7 @@ import { z } from "zod";
 import { CrudPage, FieldDef } from "@/components/CrudPage";
 import { Avatar } from "@/components/ui";
 import { api } from "@/lib/api";
+import { FilterFieldDef } from "@/lib/filters";
 import { formatDate, fullName } from "@/lib/format";
 import { useCompanyOptions, useUserOptions } from "@/lib/options";
 import { optStr, reqStr } from "@/lib/zh";
@@ -168,6 +169,13 @@ export default function Contacts() {
   const users = useUserOptions();
   const companies = useCompanyOptions();
 
+  const filterFields: FilterFieldDef[] = [
+    { key: "position", label: "Position", type: "text" },
+    { key: "company_id", label: "Company", type: "select", options: companies },
+    { key: "owner_id", label: "Owner", type: "select", options: users },
+    { key: "created_at", label: "Created date", type: "date" },
+  ];
+
   const fields: FieldDef[] = [
     { name: "first_name", label: "First name" },
     { name: "last_name", label: "Last name" },
@@ -196,6 +204,7 @@ export default function Contacts() {
       endpoint="/contacts"
       module="contacts"
       ioEntity="contacts"
+      filterFields={filterFields}
       schema={schema.transform(toApi)}
       defaults={defaults}
       fields={fields}

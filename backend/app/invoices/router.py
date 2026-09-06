@@ -1,7 +1,7 @@
 from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Response, Query
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -10,6 +10,7 @@ from app.core.crud import apply_updates, get_or_404
 from app.core.deps import require_perm
 from app.core.exceptions import AppError
 from app.core.pagination import PageParams, apply_sort, page_params, paginate
+from app.filtering import FILTERS, apply_filters
 from app.core.schemas import Message, Page
 from app.database.session import get_db
 from app.invoices.models import INVOICE_STATUSES, Invoice, InvoiceItem
@@ -35,13 +36,14 @@ def _set_items(db: Session, invoice: Invoice, items: list[dict], discount) -> No
 
 
 @router.get("", response_model=Page[InvoiceOut], dependencies=[Depends(require_perm("invoices:read"))])
-def list_invoices(status: str | None = None, params: PageParams = Depends(page_params), db: Session = Depends(get_db)):
+def list_invoices(filters: str | None = Query(None), status: str | None = None, params: PageParams = Depends(page_params), db: Session = Depends(get_db)):
     stmt = select(Invoice)
     if status:
         stmt = stmt.where(Invoice.status == status)
     if params.search:
         stmt = stmt.where(or_(Invoice.number.ilike(f"%{params.search}%"), Invoice.notes.ilike(f"%{params.search}%")))
     stmt = apply_sort(stmt, Invoice, params.sort)
+    stmt = apply_filters(stmt, FILTERS["invoices"], filters)
     return paginate(db, stmt, params)
 
 

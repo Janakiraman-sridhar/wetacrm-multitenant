@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, Response, UploadFile
+from fastapi import APIRouter, Depends, Query, Response, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user
 from app.core.exceptions import AppError, NotFoundError, PermissionDeniedError
 from app.core.permissions import has_permission
 from app.database.session import get_db
+from app.filtering import FILTERS, apply_filters
 from app.io.registry import SPECS
 from app.io.spec import build_csv, build_template_csv, parse_csv
 from app.users.models import User
@@ -49,11 +50,18 @@ def list_entities(user: User = Depends(get_current_user)):
 
 
 @router.get("/{entity}/export")
-def export_entity(entity: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def export_entity(
+    entity: str,
+    filters: str | None = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     spec = _spec(entity)
     _require(user, spec.module, "read")
-    csv_text = build_csv(spec, spec.fetch(db))
-    return _csv_response(csv_text, f"{spec.filename}.csv")
+    stmt = apply_filters(spec.base_select(), FILTERS.get(spec.filter_key, {}), filters)
+    objs = db.scalars(stmt).all()
+    rows = spec.expand(objs) if spec.expand else objs
+    return _csv_response(build_csv(spec, rows), f"{spec.filename}.csv")
 
 
 @router.get("/{entity}/template")

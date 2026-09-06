@@ -47,9 +47,11 @@ class IOSpec:
     label: str                     # human label, e.g. "Companies"
     filename: str                  # base download filename
     columns: list[IOColumn]
-    fetch: Callable[[Session], Iterable]
+    base_select: Callable[[], Any]  # returns an ORM Select (unexecuted) for export/filtering
     import_rows: Callable[[Session, User, list[dict]], ImportResult]
     sample: dict                   # {column key: example string} for the template
+    filter_key: str = ""           # entity key into app.filtering.FILTERS
+    expand: Callable[[list], Iterable] | None = None  # post-process fetched objects into export rows
 
 
 # --- cell (de)serialization ------------------------------------------------

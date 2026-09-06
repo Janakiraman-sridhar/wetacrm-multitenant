@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { CrudPage, FieldDef } from "@/components/CrudPage";
 import { StatusBadge } from "@/components/ui";
+import { FilterFieldDef } from "@/lib/filters";
 import { formatDate, formatMoney, fullName } from "@/lib/format";
 import { useCompanyOptions, useUserOptions } from "@/lib/options";
 import { optNum, optStr, reqStr } from "@/lib/zh";
@@ -67,6 +68,15 @@ export default function Projects() {
   const users = useUserOptions();
   const companies = useCompanyOptions();
 
+  const filterFields: FilterFieldDef[] = [
+    { key: "status", label: "Status", type: "select", options: STATUS },
+    { key: "company_id", label: "Customer", type: "select", options: companies },
+    { key: "owner_id", label: "Owner", type: "select", options: users },
+    { key: "start_date", label: "Start date", type: "date" },
+    { key: "end_date", label: "End date", type: "date" },
+    { key: "created_at", label: "Created date", type: "date" },
+  ];
+
   const fields: FieldDef[] = [
     { name: "name", label: "Project name", colSpan: 2 },
     { name: "company_id", label: "Customer", type: "select", options: companies },
@@ -84,6 +94,7 @@ export default function Projects() {
       endpoint="/projects"
       module="projects"
       ioEntity="projects"
+      filterFields={filterFields}
       schema={schema}
       defaults={defaults}
       fields={fields}

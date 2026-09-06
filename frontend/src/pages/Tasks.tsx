@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { CrudPage, FieldDef } from "@/components/CrudPage";
 import { StatusBadge } from "@/components/ui";
+import { FilterFieldDef } from "@/lib/filters";
 import { formatDate, formatDateTime, fullName } from "@/lib/format";
 import { useUserOptions } from "@/lib/options";
 import { optStr, reqStr } from "@/lib/zh";
@@ -56,6 +57,14 @@ const taskExtraColumns = [
 export default function Tasks() {
   const users = useUserOptions();
 
+  const filterFields: FilterFieldDef[] = [
+    { key: "status", label: "Status", type: "select", options: STATUS },
+    { key: "priority", label: "Priority", type: "select", options: PRIORITY },
+    { key: "assigned_to_id", label: "Assigned to", type: "select", options: users },
+    { key: "due_date", label: "Due date", type: "date" },
+    { key: "created_at", label: "Created date", type: "date" },
+  ];
+
   const fields: FieldDef[] = [
     { name: "title", label: "Task", colSpan: 2 },
     { name: "priority", label: "Priority", type: "select", options: PRIORITY },
@@ -71,6 +80,7 @@ export default function Tasks() {
       endpoint="/tasks"
       module="tasks"
       ioEntity="tasks"
+      filterFields={filterFields}
       schema={schema}
       defaults={defaults}
       fields={fields}

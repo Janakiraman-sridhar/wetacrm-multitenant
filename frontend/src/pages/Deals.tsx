@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { CrudPage, FieldDef } from "@/components/CrudPage";
 import { StatusBadge } from "@/components/ui";
+import { FilterFieldDef } from "@/lib/filters";
 import { formatDate, formatDateTime, formatMoney, fullName } from "@/lib/format";
 import { useCompanyOptions, useContactOptions, useStageOptions, useUserOptions } from "@/lib/options";
 import { numDefault, optStr, reqStr } from "@/lib/zh";
@@ -76,6 +77,19 @@ export default function Deals() {
   const contacts = useContactOptions();
   const stages = useStageOptions();
 
+  const filterFields: FilterFieldDef[] = [
+    {
+      key: "status", label: "Status", type: "select",
+      options: [{ value: "open", label: "Open" }, { value: "won", label: "Won" }, { value: "lost", label: "Lost" }],
+    },
+    { key: "stage_id", label: "Stage", type: "select", options: stages },
+    { key: "owner_id", label: "Owner", type: "select", options: users },
+    { key: "company_id", label: "Company", type: "select", options: companies },
+    { key: "value", label: "Value", type: "number" },
+    { key: "expected_close_date", label: "Expected close", type: "date" },
+    { key: "created_at", label: "Created date", type: "date" },
+  ];
+
   const fields: FieldDef[] = [
     { name: "title", label: "Deal title", colSpan: 2 },
     { name: "value", label: "Value", type: "number", step: "0.01" },
@@ -95,6 +109,7 @@ export default function Deals() {
       endpoint="/deals"
       module="deals"
       ioEntity="deals"
+      filterFields={filterFields}
       schema={schema}
       defaults={defaults}
       fields={fields}

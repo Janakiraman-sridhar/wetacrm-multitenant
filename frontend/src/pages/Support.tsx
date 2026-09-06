@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { CrudPage, FieldDef } from "@/components/CrudPage";
 import { StatusBadge } from "@/components/ui";
+import { FilterFieldDef } from "@/lib/filters";
 import { formatDate, fullName } from "@/lib/format";
 import { useCompanyOptions, useContactOptions, useUserOptions } from "@/lib/options";
 import { optStr, reqStr } from "@/lib/zh";
@@ -67,6 +68,14 @@ export default function Support() {
   const companies = useCompanyOptions();
   const contacts = useContactOptions();
 
+  const filterFields: FilterFieldDef[] = [
+    { key: "status", label: "Status", type: "select", options: STATUS },
+    { key: "priority", label: "Priority", type: "select", options: PRIORITY },
+    { key: "company_id", label: "Company", type: "select", options: companies },
+    { key: "assigned_to_id", label: "Assigned to", type: "select", options: users },
+    { key: "created_at", label: "Created date", type: "date" },
+  ];
+
   const fields: FieldDef[] = [
     { name: "subject", label: "Subject", colSpan: 2 },
     { name: "company_id", label: "Company", type: "select", options: companies },
@@ -85,6 +94,7 @@ export default function Support() {
       endpoint="/tickets"
       module="support"
       ioEntity="support"
+      filterFields={filterFields}
       schema={schema}
       defaults={defaults}
       fields={fields}

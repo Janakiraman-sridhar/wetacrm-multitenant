@@ -1,20 +1,28 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileDown, Plus, Receipt, Search, Send, Trash2 } from "lucide-react";
-import { useState } from "react";
+import clsx from "clsx";
+import { FileDown, ListFilter, Plus, Receipt, Search, Send, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 
 import { BillingForm, BillingFormValues, emptyBillingValues } from "@/components/BillingForm";
 import { useViewColumns } from "@/components/CrudPage";
 import { Column, DataTable } from "@/components/DataTable";
+import { FiltersBar } from "@/components/FiltersBar";
 import { ImportExport } from "@/components/ImportExport";
 import { ConfirmDialog, Modal } from "@/components/Modal";
 import { StatusBadge } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { API_URL, api, errorMessage, tokenStore } from "@/lib/api";
+import { ActiveFilter, countActive, FilterFieldDef, serializeFilters } from "@/lib/filters";
 import { formatDate, formatMoney } from "@/lib/format";
 import { useCompanyOptions, useContactOptions, useProducts } from "@/lib/options";
 import type { Page, Quotation } from "@/types";
+
+const QUOTE_STATUS = ["draft", "sent", "accepted", "declined", "converted"].map((s) => ({
+  value: s,
+  label: s[0].toUpperCase() + s.slice(1),
+}));
 
 export async function openAuthedPdf(path: string) {
   const res = await fetch(`${API_URL}/api/v1${path}`, {
@@ -32,6 +40,8 @@ export default function Quotations() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [search, setSearch] = useState("");
+  const [filters, setFilters] = useState<ActiveFilter[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Quotation | null>(null);
   const [deleting, setDeleting] = useState<Quotation | null>(null);
@@ -40,10 +50,21 @@ export default function Quotations() {
   const contacts = useContactOptions();
   const products = useProducts();
 
+  const filterFields: FilterFieldDef[] = [
+    { key: "status", label: "Status", type: "select", options: QUOTE_STATUS },
+    { key: "company_id", label: "Company", type: "select", options: companies },
+    { key: "total", label: "Total", type: "number" },
+    { key: "issue_date", label: "Issue date", type: "date" },
+    { key: "valid_until", label: "Valid until", type: "date" },
+    { key: "created_at", label: "Created date", type: "date" },
+  ];
+  const filtersParam = useMemo(() => serializeFilters(filters), [filters]);
+  const activeFilterCount = countActive(filters);
+
   const query = useQuery({
-    queryKey: ["/quotations", page, pageSize, search],
+    queryKey: ["/quotations", page, pageSize, search, filtersParam],
     queryFn: async () =>
-      (await api.get<Page<Quotation>>("/quotations", { params: { page, page_size: pageSize, search: search || undefined, sort: "-created_at" } })).data,
+      (await api.get<Page<Quotation>>("/quotations", { params: { page, page_size: pageSize, search: search || undefined, sort: "-created_at", filters: filtersParam } })).data,
     placeholderData: keepPreviousData,
   });
 
@@ -177,7 +198,24 @@ export default function Quotations() {
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">Quotations</h1>
         <div className="flex items-center gap-2">
-          <ImportExport entity="quotations" module="quotations" label="Quotations" />
+          <button
+            className={clsx("btn-secondary", (showFilters || activeFilterCount > 0) && "!border-primary-400 !text-primary-700 dark:!border-primary-600 dark:!text-primary-300")}
+            onClick={() => setShowFilters((s) => !s)}
+          >
+            <ListFilter size={15} /> Filters
+            {activeFilterCount > 0 && (
+              <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary-600 px-1 text-[10px] font-bold text-white">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+          <ImportExport
+            entity="quotations"
+            module="quotations"
+            label="Quotations"
+            filtered={activeFilterCount > 0}
+            exportParams={{ filters: filtersParam }}
+          />
           {viewsControl}
           <div className="relative">
             <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -198,6 +236,12 @@ export default function Quotations() {
           )}
         </div>
       </div>
+
+      {showFilters || activeFilterCount > 0 ? (
+        <div className="shrink-0">
+          <FiltersBar fields={filterFields} value={filters} onChange={(f) => { setFilters(f); setPage(1); }} />
+        </div>
+      ) : null}
 
       <DataTable<Quotation>
         fill

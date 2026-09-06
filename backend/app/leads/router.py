@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -9,6 +9,7 @@ from app.core.crud import apply_updates, get_or_404
 from app.core.deps import require_perm
 from app.core.exceptions import AppError
 from app.core.pagination import PageParams, apply_sort, page_params, paginate
+from app.filtering import FILTERS, apply_filters
 from app.core.schemas import Message, Page
 from app.database.session import get_db
 from app.deals.models import Deal, DealStage
@@ -24,7 +25,7 @@ router = APIRouter(prefix="/leads", tags=["leads"])
 
 
 @router.get("", response_model=Page[LeadOut], dependencies=[Depends(require_perm("leads:read"))])
-def list_leads(
+def list_leads(filters: str | None = Query(None), 
     status: str | None = None,
     assigned_to_id: str | None = None,
     source_id: str | None = None,
@@ -42,6 +43,7 @@ def list_leads(
         q = f"%{params.search}%"
         stmt = stmt.where(or_(Lead.title.ilike(q), Lead.contact_name.ilike(q), Lead.company_name.ilike(q), Lead.email.ilike(q)))
     stmt = apply_sort(stmt, Lead, params.sort)
+    stmt = apply_filters(stmt, FILTERS["leads"], filters)
     return paginate(db, stmt, params)
 
 

@@ -106,7 +106,8 @@ COMPANY_SPEC = IOSpec(
         IOColumn("owner_email", "Account Manager Email", lambda c: c.owner.email if c.owner else ""),
         IOColumn("created_at", "Created At"),
     ],
-    fetch=lambda db: db.scalars(select(Company).order_by(Company.created_at.desc())).all(),
+    base_select=lambda: select(Company).order_by(Company.created_at.desc()),
+    filter_key="companies",
     import_rows=row_importer(_create_company),
     sample={
         "name": "Acme Industries", "industry": "Manufacturing", "website": "https://acme.example",
@@ -153,7 +154,8 @@ CONTACT_SPEC = IOSpec(
         IOColumn("owner_email", "Owner Email", lambda c: c.owner.email if c.owner else ""),
         IOColumn("created_at", "Created At"),
     ],
-    fetch=lambda db: db.scalars(select(Contact).order_by(Contact.created_at.desc())).all(),
+    base_select=lambda: select(Contact).order_by(Contact.created_at.desc()),
+    filter_key="contacts",
     import_rows=row_importer(_create_contact),
     sample={
         "first_name": "Priya", "last_name": "Sharma", "position": "Procurement Head",
@@ -204,7 +206,8 @@ LEAD_SPEC = IOSpec(
         IOColumn("notes", "Notes"),
         IOColumn("created_at", "Created At"),
     ],
-    fetch=lambda db: db.scalars(select(Lead).order_by(Lead.created_at.desc())).all(),
+    base_select=lambda: select(Lead).order_by(Lead.created_at.desc()),
+    filter_key="leads",
     import_rows=row_importer(_create_lead),
     sample={
         "title": "Acme ERP rollout", "company_name": "Acme Industries", "contact_name": "Priya Sharma",
@@ -261,7 +264,8 @@ DEAL_SPEC = IOSpec(
         IOColumn("notes", "Notes"),
         IOColumn("created_at", "Created At"),
     ],
-    fetch=lambda db: db.scalars(select(Deal).order_by(Deal.created_at.desc())).all(),
+    base_select=lambda: select(Deal).order_by(Deal.created_at.desc()),
+    filter_key="deals",
     import_rows=row_importer(_create_deal),
     sample={
         "title": "Acme ERP implementation", "value": "850000", "currency": "INR", "stage": "Proposal",
@@ -306,7 +310,8 @@ TASK_SPEC = IOSpec(
         IOColumn("description", "Description"),
         IOColumn("created_at", "Created At"),
     ],
-    fetch=lambda db: db.scalars(select(Task).order_by(Task.created_at.desc())).all(),
+    base_select=lambda: select(Task).order_by(Task.created_at.desc()),
+    filter_key="tasks",
     import_rows=row_importer(_create_task),
     sample={
         "title": "Send onboarding docs", "priority": "high", "status": "todo",
@@ -350,7 +355,8 @@ PROJECT_SPEC = IOSpec(
         IOColumn("description", "Description"),
         IOColumn("created_at", "Created At"),
     ],
-    fetch=lambda db: db.scalars(select(Project).order_by(Project.created_at.desc())).all(),
+    base_select=lambda: select(Project).order_by(Project.created_at.desc()),
+    filter_key="projects",
     import_rows=row_importer(_create_project),
     sample={
         "name": "Acme ERP Implementation", "company": "Acme Industries", "status": "active",
@@ -399,7 +405,8 @@ SUPPORT_SPEC = IOSpec(
         IOColumn("resolution", "Resolution"),
         IOColumn("created_at", "Created At"),
     ],
-    fetch=lambda db: db.scalars(select(Ticket).order_by(Ticket.created_at.desc())).all(),
+    base_select=lambda: select(Ticket).order_by(Ticket.created_at.desc()),
+    filter_key="support",
     import_rows=row_importer(_create_ticket),
     sample={
         "number": "(auto-generated — leave blank on import)", "subject": "Cannot export report",
@@ -516,14 +523,12 @@ def _billing_columns(second_date_key: str, second_date_label: str, extra_head=No
     return cols
 
 
-def _billing_fetch(model):
-    def fetch(db):
-        rows = []
-        for doc in db.scalars(select(model).order_by(model.created_at.desc())).all():
-            for item in (doc.items or [None]):
-                rows.append(_BillingRow(doc, item))
-        return rows
-    return fetch
+def _billing_expand(docs):
+    rows = []
+    for doc in docs:
+        for item in (doc.items or [None]):
+            rows.append(_BillingRow(doc, item))
+    return rows
 
 
 class _BillingRow:
@@ -555,7 +560,9 @@ class _BillingRow:
 QUOTATION_SPEC = IOSpec(
     module="quotations", label="Quotations", filename="quotations",
     columns=_billing_columns("valid_until", "Valid Until", extra_head=[IOColumn("terms", "Terms")]),
-    fetch=_billing_fetch(Quotation),
+    base_select=lambda: select(Quotation).order_by(Quotation.created_at.desc()),
+    filter_key="quotations",
+    expand=_billing_expand,
     import_rows=_billing_import("quotation"),
     sample={
         "doc_ref": "Q-A (rows sharing this become one quotation)", "number": "(auto)",
@@ -569,7 +576,9 @@ QUOTATION_SPEC = IOSpec(
 INVOICE_SPEC = IOSpec(
     module="invoices", label="Invoices", filename="invoices",
     columns=_billing_columns("due_date", "Due Date"),
-    fetch=_billing_fetch(Invoice),
+    base_select=lambda: select(Invoice).order_by(Invoice.created_at.desc()),
+    filter_key="invoices",
+    expand=_billing_expand,
     import_rows=_billing_import("invoice"),
     sample={
         "doc_ref": "INV-A (rows sharing this become one invoice)", "number": "(auto)",

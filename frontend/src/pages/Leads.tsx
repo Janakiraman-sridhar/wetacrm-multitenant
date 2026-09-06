@@ -8,6 +8,7 @@ import { Modal } from "@/components/Modal";
 import { StatusBadge } from "@/components/ui";
 import { useToast } from "@/context/ToastContext";
 import { api, errorMessage } from "@/lib/api";
+import { FilterFieldDef } from "@/lib/filters";
 import { formatDate, formatDateTime, fullName } from "@/lib/format";
 import { useSourceOptions, useUserOptions } from "@/lib/options";
 import { numDefault, optEmail, optStr, reqStr } from "@/lib/zh";
@@ -86,6 +87,15 @@ const leadExtraColumns = [
 export default function Leads() {
   const users = useUserOptions();
   const sources = useSourceOptions();
+
+  const filterFields: FilterFieldDef[] = [
+    { key: "status", label: "Status", type: "select", options: STATUS_OPTIONS },
+    { key: "source_id", label: "Source", type: "select", options: sources },
+    { key: "assigned_to_id", label: "Assigned to", type: "select", options: users },
+    { key: "score", label: "Score", type: "number" },
+    { key: "follow_up_at", label: "Follow-up date", type: "date" },
+    { key: "created_at", label: "Created date", type: "date" },
+  ];
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [converting, setConverting] = useState<Lead | null>(null);
@@ -124,6 +134,7 @@ export default function Leads() {
         endpoint="/leads"
         module="leads"
         ioEntity="leads"
+        filterFields={filterFields}
         schema={schema}
         defaults={defaults}
         fields={fields}

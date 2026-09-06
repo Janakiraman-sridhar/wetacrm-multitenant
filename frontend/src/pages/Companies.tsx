@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { CrudPage, FieldDef } from "@/components/CrudPage";
 import { Avatar } from "@/components/ui";
+import { FilterFieldDef } from "@/lib/filters";
 import { formatDate, fullName } from "@/lib/format";
 import { useUserOptions } from "@/lib/options";
 import { optEmail, optStr, reqStr } from "@/lib/zh";
@@ -30,6 +31,14 @@ const defaults = {
 
 export default function Companies() {
   const users = useUserOptions();
+
+  const filterFields: FilterFieldDef[] = [
+    { key: "industry", label: "Industry", type: "text" },
+    { key: "city", label: "City", type: "text" },
+    { key: "country", label: "Country", type: "text" },
+    { key: "owner_id", label: "Account Manager", type: "select", options: users },
+    { key: "created_at", label: "Created date", type: "date" },
+  ];
 
   const fields: FieldDef[] = [
     { name: "name", label: "Company name", colSpan: 2, section: "Company details", placeholder: "e.g. Acme Industries" },
@@ -119,6 +128,7 @@ export default function Companies() {
       endpoint="/companies"
       module="companies"
       ioEntity="companies"
+      filterFields={filterFields}
       schema={schema}
       defaults={defaults}
       fields={fields}

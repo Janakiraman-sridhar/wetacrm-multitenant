@@ -1,19 +1,21 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { Check, ChevronDown, LayoutList, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Check, ChevronDown, LayoutList, ListFilter, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import type { ZodTypeAny } from "zod";
 
 import { Column, DataTable } from "@/components/DataTable";
 import { DatePicker } from "@/components/DatePicker";
+import { FiltersBar } from "@/components/FiltersBar";
 import { ImportExport } from "@/components/ImportExport";
 import { ConfirmDialog, Modal } from "@/components/Modal";
 import { Select } from "@/components/Select";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { api, errorMessage } from "@/lib/api";
+import { ActiveFilter, countActive, FilterFieldDef, serializeFilters } from "@/lib/filters";
 import type { Page } from "@/types";
 
 export interface SelectOption {
@@ -436,6 +438,8 @@ export interface CrudPageProps<T extends { id: string }> {
   toolbar?: React.ReactNode;
   /** Enables CSV import/export in the toolbar; the /io registry key (e.g. "companies"). */
   ioEntity?: string;
+  /** Enables the date/field filter panel; the filterable fields for this module. */
+  filterFields?: FilterFieldDef[];
   rowActions?: (row: T, helpers: { edit: (row: T) => void; remove: (row: T) => void }) => React.ReactNode;
   onRowClick?: (row: T, helpers: { edit: (row: T) => void }) => void;
   createLabel?: string;
@@ -456,6 +460,7 @@ export function CrudPage<T extends { id: string }>({
   extraParams,
   toolbar,
   ioEntity,
+  filterFields,
   rowActions,
   onRowClick,
   createLabel,
@@ -469,14 +474,19 @@ export function CrudPage<T extends { id: string }>({
   const [pageSize, setPageSize] = useState(25);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<string | null>("-created_at");
+  const [filters, setFilters] = useState<ActiveFilter[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<T | null>(null);
   const [deleting, setDeleting] = useState<T | null>(null);
   const { visibleColumns, viewsControl } = useViewColumns(module, columns, allColumns);
 
+  const filtersParam = useMemo(() => serializeFilters(filters), [filters]);
+  const activeFilterCount = countActive(filters);
+
   const params = useMemo(
-    () => ({ page, page_size: pageSize, search: search || undefined, sort: sort || undefined, ...extraParams }),
-    [page, pageSize, search, sort, extraParams]
+    () => ({ page, page_size: pageSize, search: search || undefined, sort: sort || undefined, filters: filtersParam, ...extraParams }),
+    [page, pageSize, search, sort, filtersParam, extraParams]
   );
 
   const query = useQuery({
@@ -532,7 +542,28 @@ export function CrudPage<T extends { id: string }>({
         <h1 className="text-xl font-semibold">{title}</h1>
         <div className="flex flex-wrap items-center gap-2">
           {toolbar}
-          {ioEntity && <ImportExport entity={ioEntity} module={module} label={title} />}
+          {filterFields && filterFields.length > 0 && (
+            <button
+              className={clsx("btn-secondary", (showFilters || activeFilterCount > 0) && "!border-primary-400 !text-primary-700 dark:!border-primary-600 dark:!text-primary-300")}
+              onClick={() => setShowFilters((s) => !s)}
+            >
+              <ListFilter size={15} /> Filters
+              {activeFilterCount > 0 && (
+                <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary-600 px-1 text-[10px] font-bold text-white">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+          )}
+          {ioEntity && (
+            <ImportExport
+              entity={ioEntity}
+              module={module}
+              label={title}
+              filtered={activeFilterCount > 0}
+              exportParams={{ filters: filtersParam }}
+            />
+          )}
           {viewsControl}
           <div className="relative">
             <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -553,6 +584,19 @@ export function CrudPage<T extends { id: string }>({
           )}
         </div>
       </div>
+
+      {filterFields && filterFields.length > 0 && (showFilters || activeFilterCount > 0) && (
+        <div className="shrink-0">
+          <FiltersBar
+            fields={filterFields}
+            value={filters}
+            onChange={(f) => {
+              setFilters(f);
+              setPage(1);
+            }}
+          />
+        </div>
+      )}
 
       <DataTable<T>
         fill

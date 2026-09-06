@@ -1,6 +1,6 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Response, Query
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -9,6 +9,7 @@ from app.core.crud import apply_updates, get_or_404
 from app.core.deps import require_perm
 from app.core.exceptions import AppError
 from app.core.pagination import PageParams, apply_sort, page_params, paginate
+from app.filtering import FILTERS, apply_filters
 from app.core.schemas import Message, Page
 from app.database.session import get_db
 from app.invoices.models import Invoice, InvoiceItem
@@ -56,13 +57,14 @@ def _logo_bytes(db: Session) -> bytes | None:
 
 
 @router.get("", response_model=Page[QuotationOut], dependencies=[Depends(require_perm("quotations:read"))])
-def list_quotations(status: str | None = None, params: PageParams = Depends(page_params), db: Session = Depends(get_db)):
+def list_quotations(filters: str | None = Query(None), status: str | None = None, params: PageParams = Depends(page_params), db: Session = Depends(get_db)):
     stmt = select(Quotation)
     if status:
         stmt = stmt.where(Quotation.status == status)
     if params.search:
         stmt = stmt.where(or_(Quotation.number.ilike(f"%{params.search}%"), Quotation.notes.ilike(f"%{params.search}%")))
     stmt = apply_sort(stmt, Quotation, params.sort)
+    stmt = apply_filters(stmt, FILTERS["quotations"], filters)
     return paginate(db, stmt, params)
 
 

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -7,6 +7,7 @@ from app.core.crud import apply_updates, get_or_404
 from app.core.deps import require_perm
 from app.core.exceptions import AppError
 from app.core.pagination import PageParams, apply_sort, page_params, paginate
+from app.filtering import FILTERS, apply_filters
 from app.core.schemas import Message, Page
 from app.database.base import utcnow
 from app.database.session import get_db
@@ -157,7 +158,7 @@ def pipeline_board(owner_id: str | None = None, db: Session = Depends(get_db)):
 # --- Deals CRUD ---
 
 @router.get("", response_model=Page[DealOut], dependencies=[Depends(require_perm("deals:read"))])
-def list_deals(
+def list_deals(filters: str | None = Query(None), 
     status: str | None = None,
     stage_id: str | None = None,
     owner_id: str | None = None,
@@ -178,6 +179,7 @@ def list_deals(
         q = f"%{params.search}%"
         stmt = stmt.where(or_(Deal.title.ilike(q), Deal.competitors.ilike(q)))
     stmt = apply_sort(stmt, Deal, params.sort)
+    stmt = apply_filters(stmt, FILTERS["deals"], filters)
     return paginate(db, stmt, params)
 
 

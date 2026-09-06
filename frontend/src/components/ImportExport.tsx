@@ -1,7 +1,9 @@
 import { useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { AlertCircle, CheckCircle2, Download, FileDown, FileUp, Loader2, Upload } from "lucide-react";
-import { useRef, useState } from "react";
+import {
+  AlertCircle, CheckCircle2, ChevronDown, Download, FileDown, FileSpreadsheet, FileUp, Loader2, Upload,
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import { Modal } from "@/components/Modal";
 import { useAuth } from "@/context/AuthContext";
@@ -34,11 +36,27 @@ async function downloadFile(path: string) {
   URL.revokeObjectURL(url);
 }
 
-export function ImportExport({ entity, module, label }: { entity: string; module: string; label: string }) {
+export function ImportExport({
+  entity,
+  module,
+  label,
+  exportParams,
+  filtered = false,
+}: {
+  entity: string;
+  module: string;
+  label: string;
+  /** Extra query params (e.g. active filters) appended to the export request. */
+  exportParams?: Record<string, string | undefined>;
+  /** Whether a filter is currently applied — changes the export menu wording. */
+  filtered?: boolean;
+}) {
   const { hasPerm } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -47,12 +65,32 @@ export function ImportExport({ entity, module, label }: { entity: string; module
 
   const canRead = hasPerm(`${module}:read`);
   const canWrite = hasPerm(`${module}:write`);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [menuOpen]);
+
   if (!canRead && !canWrite) return null;
 
+  const exportQuery = () => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(exportParams ?? {})) {
+      if (v) qs.set(k, v);
+    }
+    const s = qs.toString();
+    return s ? `?${s}` : "";
+  };
+
   const doExport = async () => {
+    setMenuOpen(false);
     setExporting(true);
     try {
-      await downloadFile(`${entity}/export`);
+      await downloadFile(`${entity}/export${exportQuery()}`);
     } catch {
       toast("Export failed", "error");
     } finally {
@@ -91,6 +129,7 @@ export function ImportExport({ entity, module, label }: { entity: string; module
   };
 
   const openImport = () => {
+    setMenuOpen(false);
     setResult(null);
     setFileName(null);
     setOpen(true);
@@ -98,16 +137,49 @@ export function ImportExport({ entity, module, label }: { entity: string; module
 
   return (
     <>
-      {canRead && (
-        <button className="btn-secondary" onClick={doExport} disabled={exporting} title={`Export all ${label.toLowerCase()} to CSV`}>
-          {exporting ? <Loader2 size={15} className="animate-spin" /> : <FileDown size={15} />} Export
+      <div ref={menuRef} className="relative">
+        <button
+          className="btn-secondary"
+          onClick={() => setMenuOpen(!menuOpen)}
+          title="Import or export data"
+          disabled={exporting}
+        >
+          {exporting ? <Loader2 size={15} className="animate-spin" /> : <FileSpreadsheet size={15} />}
+          Import / Export
+          <ChevronDown size={14} className={clsx("text-slate-400 transition-transform", menuOpen && "rotate-180")} />
         </button>
-      )}
-      {canWrite && (
-        <button className="btn-secondary" onClick={openImport} title={`Import ${label.toLowerCase()} from a CSV file`}>
-          <FileUp size={15} /> Import
-        </button>
-      )}
+
+        {menuOpen && (
+          <div className="card absolute right-0 top-full z-40 mt-2 w-60 overflow-hidden p-1.5 shadow-xl">
+            {canRead && (
+              <button
+                onClick={doExport}
+                className="flex w-full items-start gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <FileDown size={16} className="mt-0.5 shrink-0 text-primary-600 dark:text-primary-400" />
+                <span>
+                  <span className="block text-sm font-medium">Export to CSV</span>
+                  <span className="block text-[11px] text-slate-400">
+                    {filtered ? "Only the filtered records" : `All ${label.toLowerCase()}`}
+                  </span>
+                </span>
+              </button>
+            )}
+            {canWrite && (
+              <button
+                onClick={openImport}
+                className="flex w-full items-start gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <FileUp size={16} className="mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <span>
+                  <span className="block text-sm font-medium">Import from CSV</span>
+                  <span className="block text-[11px] text-slate-400">Bulk-create from a file</span>
+                </span>
+              </button>
+            )}
+          </div>
+        )}
+      </div>
 
       <Modal open={open} onClose={() => setOpen(false)} title={`Import ${label}`}>
         <div className="space-y-4">
@@ -156,7 +228,7 @@ export function ImportExport({ entity, module, label }: { entity: string; module
                 <>
                   <Upload size={22} className="text-slate-400" />
                   <span className="text-sm font-medium">Choose a CSV file</span>
-                  <span className="text-xs text-slate-400">or drag it onto this area</span>
+                  <span className="text-xs text-slate-400">UTF-8 CSV, up to 5 MB</span>
                 </>
               )}
             </button>

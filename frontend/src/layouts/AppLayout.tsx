@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { ChevronLeft, LogOut, Menu, Moon, ShieldCheck, Sun, X } from "lucide-react";
+import { ChevronLeft, ExternalLink, LogOut, Menu, Moon, ShieldCheck, Sun, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 
@@ -11,6 +11,7 @@ import { Avatar } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 import { moduleIcon, useModules } from "@/lib/modules";
+import { useVahanPortal } from "@/lib/settings";
 
 /**
  * The sidebar is built from `/api/v1/modules`, not a list in this file.
@@ -26,6 +27,7 @@ export function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
   const { data: modules } = useModules();
+  const vahan = useVahanPortal();
 
   // Two filters, both needed: the tenant decides which modules exist at all, the
   // user's role decides which of those they may see.
@@ -136,6 +138,18 @@ export function AppLayout() {
             <GlobalSearch />
           </div>
           <div className="flex shrink-0 items-center gap-1">
+            {vahan?.enabled && vahan.url && (
+              <a
+                href={vahan.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-secondary !py-1.5 hidden sm:inline-flex"
+                title="Open the Vahan vehicle registration portal in a new tab"
+              >
+                {vahan.label ?? "Vahan Portal"}
+                <ExternalLink size={13} />
+              </a>
+            )}
             <button className="btn-ghost !p-2" onClick={toggleTheme} title="Toggle theme">
               {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
             </button>

@@ -141,7 +141,18 @@ module end-to-end (Companies) and prove it before converting the rest.
 
 ---
 
-## Phase 3 — Customers and PII
+## Phase 3 — Customers and PII ✅ COMPLETE
+
+*Delivered. 159 tests pass. PAN and Aadhaar are ciphertext in the database, masked in
+every response, and revealable only with a separate permission and an audit row. Notes:*
+
+- *Customer fields live on `contacts` rather than a new table — an insurance tenant's
+  "Customer" is the CRM's contact, relabelled by its template. A separate table would
+  fork every relationship, filter, export and search path.*
+- *Aadhaar full capture is off by default (PRD 9.4); only last-4 is kept unless a
+  workspace opts in. The reveal endpoint explains this rather than 404-ing.*
+- *Test fixtures create tenants directly and so had no data key — provisioning mints
+  one, and `ensure_tenant_keys()` backfills tenants created before this phase.*
 
 **Goal.** The insurance customer record exists, complete, with PAN and Aadhaar encrypted, masked and
 audit-logged on reveal.

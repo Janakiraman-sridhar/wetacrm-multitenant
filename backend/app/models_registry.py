@@ -5,7 +5,7 @@ Imported by main.py (create_all) and by Alembic's env.py (autogenerate).
 
 from app.activities import models as activities_models  # noqa: F401
 from app.companies import models as companies_models  # noqa: F401
-from app.contacts import models as contacts_models  # noqa: F401
+from app.contacts import models as contacts_models  # noqa: F401  (Contact, Nominee, CustomerNote)
 from app.deals import models as deals_models  # noqa: F401
 from app.documents import models as documents_models  # noqa: F401
 from app.invoices import models as invoices_models  # noqa: F401

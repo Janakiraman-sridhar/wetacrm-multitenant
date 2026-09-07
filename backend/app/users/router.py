@@ -10,6 +10,7 @@ from app.core.pagination import PageParams, apply_sort, page_params, paginate
 from app.core.permissions import ALL_PERMISSIONS, MODULES
 from app.core.schemas import Message, Page
 from app.core.security import hash_password
+from app.core.tenancy import platform_scope
 from app.database.session import get_db
 from app.services.email import send_welcome
 from app.users.models import Role, User
@@ -64,6 +65,13 @@ def update_user(user_id: str, payload: UserUpdate, db: Session = Depends(get_db)
     data = payload.model_dump(exclude_unset=True)
     if "role_id" in data:
         get_or_404(db, Role, data["role_id"], "Role")
+    if data.get("email") and data["email"] != user.email:
+        # One login belongs to one workspace, so the address has to be free
+        # platform-wide — not just inside this tenant.
+        with platform_scope():
+            taken = db.scalar(select(User).where(User.email == data["email"]))
+        if taken:
+            raise AppError("That email address is already in use", 409)
     changes = apply_updates(user, data)
     if changes:
         audit(db, actor.id, "update", "user", user.id, changes)

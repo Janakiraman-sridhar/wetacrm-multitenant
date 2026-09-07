@@ -45,7 +45,7 @@ cd backend && .venv/Scripts/python.exe -m pytest          # all
 ```
 
 `backend/tests/` holds the tenant-isolation (Phase 0), template/provisioning (Phase 1)
-and custom-field (Phase 2) suites — 129 tests. Install
+custom-field (Phase 2) and customer-PII (Phase 3) suites — 159 tests. Install
 test deps with `pip install -r requirements-dev.txt`. There is no frontend test suite;
 `npm run build` (which runs `tsc -b`) is the only typecheck gate.
 
@@ -166,6 +166,35 @@ render details the server cannot know, like which hook supplies a select's optio
 `useSchemaOverlay` in `CrudPage` layers the tenant's relabels, hides and custom fields on
 top. Custom form values are named `custom.<key>`, which react-hook-form nests into
 exactly the shape the API wants.
+
+### Personal data — encryption, masking, reveal
+
+`app/services/crypto.py` does envelope encryption: a platform master key
+(`PII_MASTER_KEY`) wraps a per-tenant data key stored on `tenants.dek_encrypted`;
+that key encrypts the values with **AES-256-GCM**, so a tampered ciphertext fails to
+decrypt rather than returning garbage. Without the env var a dev key is derived from
+`JWT_SECRET` and loudly logged; in production the app refuses to start without one.
+
+An encrypted column cannot be searched, so each searchable field has a **blind index**
+— `HMAC-SHA256(tenant_key, normalised)` — supporting exact-match lookup with nothing
+reversible stored. `GET /contacts/lookup?pan=…` uses it.
+
+**Masked by default.** `contacts/router._out()` is the single serialisation point, so a
+full PAN or Aadhaar cannot escape through an endpoint someone forgot to mask. The
+plaintext comes only from `POST /contacts/{id}/reveal`, which needs the separate
+`contacts:reveal_pii` permission, is rate limited, and writes an audit row every time.
+
+**Aadhaar defaults to last-4 only.** Full capture sits behind the tenant setting
+`features.aadhaar_full_capture`, off unless a workspace opts in — a private entity
+storing full Aadhaar is restricted under the Aadhaar Act. See PRD 9.4.
+
+Validation lives in `app/core/validators.py`: PAN format, Aadhaar **Verhoeff** check
+digit (catches a typo or transposition), E.164 phone normalisation, pincode. Phone
+normalisation is deliberately forgiving — refusing to save a customer over a phone
+format would be worse than storing it imperfectly.
+
+Birthdays query an indexed `birthday_key` (MMDD) rather than a date function over every
+row, so "whose birthday is this week" stays a range scan.
 
 ### The sidebar is data, not code
 

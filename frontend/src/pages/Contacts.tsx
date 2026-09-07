@@ -3,12 +3,13 @@ import { Building2, Globe, IdCard, Mail, MapPin, Phone, UserRound } from "lucide
 import { z } from "zod";
 
 import { CrudPage, FieldDef } from "@/components/CrudPage";
+import { CustomerChip } from "@/components/CustomerChip";
 import { Avatar } from "@/components/ui";
 import { api } from "@/lib/api";
 import { FilterFieldDef } from "@/lib/filters";
 import { formatDate, fullName } from "@/lib/format";
 import { useCompanyOptions, useTagOptions, useUserOptions } from "@/lib/options";
-import { optStr, reqStr } from "@/lib/zh";
+import { optNum, optStr, reqStr } from "@/lib/zh";
 import type { Company, Contact } from "@/types";
 
 /** Live preview of the selected company, pulled from the Companies module. */
@@ -93,13 +94,71 @@ const schema = z.object({
   notes: optStr,
   owner_id: optStr,
   tags: z.array(z.string()).default([]),
+
+  // Insurance customer fields. Optional here and validated server-side, so the
+  // same page serves a general CRM tenant that never fills them in.
+  date_of_birth: optStr,
+  gender: optStr,
+  marital_status: optStr,
+  occupation: optStr,
+  annual_income: optNum,
+  mobile: optStr,
+  alt_mobile: optStr,
+  alt_email: optStr,
+  address_line: optStr,
+  pincode: optStr,
+  city: optStr,
+  state: optStr,
+  pan: optStr,
+  aadhaar: optStr,
+  stage: optStr,
+  referred_by_type: optStr,
+  referred_by_name: optStr,
+  products_of_interest: z.array(z.string()).default([]),
 });
 
 const defaults = {
   first_name: "", last_name: "", position: "", company_id: "", email_primary: "",
   email_secondary: "", phone_primary: "", phone_secondary: "", linkedin: "", twitter: "",
   notes: "", owner_id: "", tags: [] as string[],
+  date_of_birth: "", gender: "", marital_status: "", occupation: "", annual_income: "",
+  mobile: "", alt_mobile: "", alt_email: "", address_line: "", pincode: "", city: "", state: "",
+  pan: "", aadhaar: "", stage: "", referred_by_type: "", referred_by_name: "",
+  products_of_interest: [] as string[],
 };
+
+const GENDERS = [
+  { value: "male", label: "Male" },
+  { value: "female", label: "Female" },
+  { value: "other", label: "Other" },
+  { value: "prefer_not_to_say", label: "Prefer not to say" },
+];
+
+const MARITAL_STATUSES = [
+  { value: "single", label: "Single" },
+  { value: "married", label: "Married" },
+  { value: "widowed", label: "Widowed" },
+  { value: "divorced", label: "Divorced" },
+];
+
+const REFERRAL_TYPES = [
+  { value: "customer", label: "Existing customer" },
+  { value: "staff", label: "Staff" },
+  { value: "external", label: "External referrer" },
+  { value: "campaign", label: "Campaign" },
+  { value: "walk_in", label: "Walk-in" },
+];
+
+const CUSTOMER_STAGES = [
+  "Prospect", "Contacted", "Documents pending", "Policy issued",
+  "Active", "Renewal due", "Lapsed", "Dormant",
+].map((name) => ({ value: name, label: name }));
+
+/** Product lines an agent can flag interest in, loans included. */
+const PRODUCT_INTERESTS = [
+  "Motor", "Health", "Life", "Travel", "Personal Accident", "Fire / Property",
+  "Home Loan", "Personal Loan", "Vehicle Loan", "Business Loan", "Loan Against Property",
+].map((name) => ({ value: name, label: name }));
 
 /** The form uses flat fields; convert to/from the API's array-based shape. */
 function toApi(values: any) {
@@ -120,9 +179,11 @@ const contactDefaultColumns = [
     key: "first_name",
     header: "Name",
     sortable: true,
+    // Name, number and a way to message them — so an agent never opens a record
+    // just to find the phone number.
     render: (c: Contact) => (
       <span className="font-medium">
-        {c.first_name} {c.last_name}
+        <CustomerChip person={c} compact />
       </span>
     ),
   },
@@ -199,6 +260,50 @@ export default function Contacts() {
     { name: "owner_id", label: "Owner", type: "select", options: users },
     { name: "tags", label: "Products / services (tags)", type: "multiselect", options: tags, colSpan: 2, placeholder: "Tag products or services…" },
     { name: "notes", label: "Notes", type: "textarea", colSpan: 2 },
+
+    // --- customer details ---------------------------------------------------
+    { name: "mobile", label: "Mobile", section: "Customer details", placeholder: "98765 43210" },
+    { name: "alt_mobile", label: "Alternate mobile", section: "Customer details" },
+    { name: "date_of_birth", label: "Date of birth", type: "date", section: "Customer details" },
+    { name: "gender", label: "Gender", type: "select", options: GENDERS, section: "Customer details" },
+    { name: "marital_status", label: "Marital status", type: "select", options: MARITAL_STATUSES, section: "Customer details" },
+    { name: "occupation", label: "Occupation", section: "Customer details" },
+    { name: "annual_income", label: "Annual income", type: "number", section: "Customer details" },
+    { name: "alt_email", label: "Alternate email", type: "email", section: "Customer details" },
+    { name: "stage", label: "Stage", type: "select", options: CUSTOMER_STAGES, section: "Customer details" },
+    {
+      name: "products_of_interest",
+      label: "Interested in",
+      type: "multiselect",
+      options: PRODUCT_INTERESTS,
+      colSpan: 2,
+      section: "Customer details",
+      placeholder: "Insurance and loan products…",
+    },
+
+    // --- KYC ----------------------------------------------------------------
+    {
+      name: "pan",
+      label: "PAN",
+      section: "KYC",
+      placeholder: "ABCDE1234F",
+      after: () => (
+        <p className="text-xs text-slate-400">
+          Stored encrypted and shown masked. Viewing the full number is recorded.
+        </p>
+      ),
+    },
+    { name: "aadhaar", label: "Aadhaar", section: "KYC", placeholder: "1234 5678 9012" },
+
+    // --- address ------------------------------------------------------------
+    { name: "address_line", label: "Address", type: "textarea", colSpan: 2, section: "Address" },
+    { name: "pincode", label: "Pincode", section: "Address", placeholder: "600001" },
+    { name: "city", label: "City", section: "Address" },
+    { name: "state", label: "State", section: "Address" },
+
+    // --- referral -----------------------------------------------------------
+    { name: "referred_by_type", label: "Referred by", type: "select", options: REFERRAL_TYPES, section: "Referral" },
+    { name: "referred_by_name", label: "Referrer name", section: "Referral" },
   ];
 
   return (
@@ -225,6 +330,26 @@ export default function Contacts() {
         notes: c.notes ?? "",
         owner_id: c.owner?.id ?? "",
         tags: c.tags ?? [],
+        date_of_birth: c.date_of_birth ?? "",
+        gender: c.gender ?? "",
+        marital_status: c.marital_status ?? "",
+        occupation: c.occupation ?? "",
+        annual_income: c.annual_income ?? "",
+        mobile: c.mobile ?? "",
+        alt_mobile: c.alt_mobile ?? "",
+        alt_email: c.alt_email ?? "",
+        address_line: c.address_line ?? "",
+        pincode: c.pincode ?? "",
+        city: c.city ?? "",
+        state: c.state ?? "",
+        stage: c.stage ?? "",
+        referred_by_type: c.referred_by_type ?? "",
+        referred_by_name: c.referred_by_name ?? "",
+        products_of_interest: c.products_of_interest ?? [],
+        // Identity is write-only: the form starts blank so an unchanged save does
+        // not overwrite what is stored, and the masked value is shown in the table.
+        pan: "",
+        aadhaar: "",
       })}
       searchPlaceholder="Search contacts…"
       columns={contactDefaultColumns}

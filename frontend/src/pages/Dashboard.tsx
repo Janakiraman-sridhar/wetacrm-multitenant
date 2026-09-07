@@ -14,6 +14,7 @@ import { Avatar, PageSpinner } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 import { formatDate, formatDateTime, formatMoney, timeAgo } from "@/lib/format";
+import { BirthdayPanel } from "@/components/BirthdayPanel";
 
 const PIE_COLORS = ["#4F46E5", "#10B981", "#F59E0B", "#EF4444", "#0EA5E9", "#8B5CF6", "#EC4899", "#64748B"];
 
@@ -273,6 +274,9 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </ChartCard>
       </div>
+
+      {/* Whose birthday is coming up — the daily prompt an agent actually acts on. */}
+      <BirthdayPanel compact />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <ChartCard title="Upcoming Meetings" icon={CalendarClock} onViewData={() => open("upcoming_meetings", "Meetings in period")}>

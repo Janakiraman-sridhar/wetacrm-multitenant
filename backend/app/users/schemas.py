@@ -53,6 +53,9 @@ class UserCreate(ORMModel):
 
 
 class UserUpdate(ORMModel):
+    # Email is the login identity and is unique across the whole platform, so the
+    # router checks it against every tenant before allowing a change.
+    email: EmailStr | None = None
     first_name: str | None = None
     last_name: str | None = None
     phone: str | None = None

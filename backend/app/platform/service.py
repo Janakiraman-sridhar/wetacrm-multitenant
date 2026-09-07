@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import hash_password
+from app.services import crypto
 from app.core.tenancy import platform_scope, tenant_scope
 from app.platform import provisioning
 from app.platform.models import PlatformAuditLog, Tenant
@@ -82,6 +83,9 @@ def provision_tenant(
         type=type,
         template_key=template_key,
         status="provisioning",
+        # Its own data-encryption key, wrapped with the platform master key. Minted
+        # here so PII can never be written before a key exists to protect it.
+        dek_encrypted=crypto.wrap_dek(crypto.generate_dek()),
     )
     with platform_scope():
         db.add(tenant)
@@ -188,8 +192,18 @@ def platform_audit(
     )
 
 
+def ensure_tenant_keys(db: Session) -> None:
+    """Give any tenant created before encryption existed its own data key."""
+    with platform_scope():
+        for tenant in db.scalars(select(Tenant).where(Tenant.dek_encrypted.is_(None))).all():
+            tenant.dek_encrypted = crypto.wrap_dek(crypto.generate_dek())
+            log.info("Generated a data-encryption key for tenant %s", tenant.slug)
+        db.commit()
+
+
 def bootstrap(db: Session) -> None:
     """Startup: load system templates, then ensure the platform admin and Default tenant."""
     provisioning.sync_system_templates(db)
     ensure_platform_admin(db)
     ensure_default_tenant(db)
+    ensure_tenant_keys(db)

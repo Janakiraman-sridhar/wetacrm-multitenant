@@ -11,7 +11,12 @@ MODULES = [
 
 ACTIONS = ["read", "write", "delete"]
 
-ALL_PERMISSIONS = [f"{m}:{a}" for m in MODULES for a in ACTIONS]
+# Permissions that are not a plain module/action pair. Viewing an unmasked PAN or
+# Aadhaar is deliberately separate from "can edit customers" — most people who
+# maintain customer records have no reason to see the raw numbers.
+EXTRA_PERMISSIONS = ["contacts:reveal_pii"]
+
+ALL_PERMISSIONS = [f"{m}:{a}" for m in MODULES for a in ACTIONS] + EXTRA_PERMISSIONS
 
 
 def _grant(modules: list[str], actions: list[str] | None = None) -> list[str]:

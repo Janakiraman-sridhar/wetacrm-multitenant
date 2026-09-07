@@ -44,6 +44,7 @@ from app.platform.models import Tenant  # noqa: E402
 from app.products.models import Product  # noqa: E402
 from app.projects.models import Project  # noqa: E402
 from app.quotations.models import Quotation  # noqa: E402
+from app.services import crypto  # noqa: E402
 from app.settings.models import EmailTemplate, Setting, Tag  # noqa: E402
 from app.support.models import Ticket  # noqa: E402
 from app.tasks.models import Task  # noqa: E402
@@ -74,6 +75,8 @@ def _build_tenant(db, key: str) -> TenantWorld:
         slug=key,
         status="active",
         template_key="general_crm",
+        # Its own data-encryption key, exactly as real provisioning mints one.
+        dek_encrypted=crypto.wrap_dek(crypto.generate_dek()),
     )
     with platform_scope():
         db.add(tenant)

@@ -72,6 +72,35 @@ export interface Contact {
   tags: string[];
   owner?: UserBrief | null;
   created_at: string;
+  // Insurance customer fields — null for a general CRM tenant.
+  date_of_birth?: string | null;
+  gender?: string | null;
+  marital_status?: string | null;
+  occupation?: string | null;
+  annual_income?: number | null;
+  mobile?: string | null;
+  alt_mobile?: string | null;
+  alt_email?: string | null;
+  address_line?: string | null;
+  pincode?: string | null;
+  city?: string | null;
+  state?: string | null;
+  stage?: string | null;
+  referred_by_type?: string | null;
+  referred_by_contact_id?: string | null;
+  referred_by_name?: string | null;
+  referred_on?: string | null;
+  products_of_interest?: string[];
+  nominees?: Nominee[];
+  /** Identity numbers only ever arrive masked; the full value needs an audited reveal. */
+  pan_masked?: string | null;
+  aadhaar_masked?: string | null;
+  has_pan?: boolean;
+  has_aadhaar?: boolean;
+  aadhaar_full_stored?: boolean;
+  full_name?: string;
+  primary_phone?: string | null;
+  age?: number | null;
 }
 
 export interface LeadSource {
@@ -386,4 +415,26 @@ export interface PlatformStats {
   tenants_suspended: number;
   users_total: number;
   by_template: Record<string, number>;
+}
+
+
+export interface Nominee {
+  id: string;
+  name: string;
+  relation?: string | null;
+  date_of_birth?: string | null;
+  age?: number | null;
+  share_percent: number;
+  appointee_name?: string | null;
+  appointee_relation?: string | null;
+  position: number;
+  is_minor: boolean;
+}
+
+export interface CustomerNote {
+  id: string;
+  body: string;
+  is_pinned: boolean;
+  created_at: string;
+  author?: UserBrief | null;
 }

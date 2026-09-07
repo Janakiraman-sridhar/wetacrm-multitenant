@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     minio_secure: bool = False
     upload_dir: str = "./uploads"
 
+    # Platform key that wraps each tenant's data-encryption key. Required in
+    # production; derived from JWT_SECRET in development so local dev needs no setup.
+    pii_master_key: str = ""
+
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""

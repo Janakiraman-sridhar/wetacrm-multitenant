@@ -4,7 +4,7 @@ import clsx from "clsx";
 import { Check, ChevronDown, LayoutList, ListFilter, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
-import type { ZodTypeAny } from "zod";
+import { z, type ZodTypeAny } from "zod";
 
 import { Column, DataTable } from "@/components/DataTable";
 import { DatePicker } from "@/components/DatePicker";
@@ -17,6 +17,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { api, errorMessage } from "@/lib/api";
 import { ActiveFilter, countActive, FilterFieldDef, serializeFilters } from "@/lib/filters";
+import { useSchemaOverlay } from "@/lib/schema";
 import type { Page } from "@/types";
 
 export interface SelectOption {
@@ -493,7 +494,61 @@ export function CrudPage<T extends { id: string }>({
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<T | null>(null);
   const [deleting, setDeleting] = useState<T | null>(null);
-  const { visibleColumns, viewsControl } = useViewColumns(module, columns, allColumns);
+
+  // What this tenant has done to the module: relabelled or hidden base fields, and
+  // fields they added. The page's own arrays stay the base — they carry render
+  // details the server cannot know, like which hook supplies a select's options.
+  const overlay = useSchemaOverlay(module);
+
+  const relabel = <F extends { label: string }>(key: string, item: F): F =>
+    overlay.labels[key] && overlay.labels[key] !== item.label
+      ? { ...item, label: overlay.labels[key] }
+      : item;
+
+  const effectiveFields = useMemo(
+    () => [
+      ...fields.filter((f) => !overlay.hidden.has(f.name)).map((f) => relabel(f.name, f)),
+      ...overlay.customFields,
+    ],
+    [fields, overlay]
+  );
+
+  const effectiveColumns = useMemo(
+    () => [
+      ...columns
+        .filter((c) => !overlay.hidden.has(c.key))
+        .map((c) => (overlay.labels[c.key] ? { ...c, header: overlay.labels[c.key] } : c)),
+      ...(overlay.customColumns as Column<T>[]),
+    ],
+    [columns, overlay]
+  );
+
+  const effectiveAllColumns = useMemo(() => {
+    const base = (allColumns ?? columns)
+      .filter((c) => !overlay.hidden.has(c.key))
+      .map((c) => (overlay.labels[c.key] ? { ...c, header: overlay.labels[c.key] } : c));
+    return [...base, ...(overlay.customColumns as Column<T>[])];
+  }, [allColumns, columns, overlay]);
+
+  const effectiveFilterFields = useMemo(
+    () => [...(filterFields ?? []), ...overlay.customFilters],
+    [filterFields, overlay]
+  );
+
+  // Custom values submit as { custom: { key: value } }; a plain zod object would
+  // strip that key before it reached the API.
+  const effectiveSchema = useMemo(() => {
+    const anySchema = schema as any;
+    if (overlay.customFields.length === 0 || typeof anySchema?.extend !== "function") return schema;
+    return anySchema.extend({ custom: z.record(z.any()).optional() });
+  }, [schema, overlay.customFields.length]);
+
+  const effectiveDefaults = useMemo(
+    () => ({ ...defaults, custom: { ...overlay.defaults } }),
+    [defaults, overlay.defaults]
+  );
+
+  const { visibleColumns, viewsControl } = useViewColumns(module, effectiveColumns, effectiveAllColumns);
 
   const filtersParam = useMemo(() => serializeFilters(filters), [filters]);
   const activeFilterCount = countActive(filters);
@@ -509,17 +564,24 @@ export function CrudPage<T extends { id: string }>({
     placeholderData: keepPreviousData,
   });
 
-  const form = useForm({ resolver: zodResolver(schema as any), defaultValues: defaults });
+  const form = useForm({ resolver: zodResolver(effectiveSchema as any), defaultValues: effectiveDefaults });
 
   const openCreate = () => {
     setEditing(null);
-    form.reset(defaults);
+    form.reset(effectiveDefaults);
     setModalOpen(true);
   };
 
   const openEdit = (row: T) => {
     setEditing(row);
-    form.reset({ ...defaults, ...(toForm ? toForm(row) : row) });
+    const record = (toForm ? toForm(row) : row) as Record<string, any>;
+    form.reset({
+      ...effectiveDefaults,
+      ...record,
+      // Merge rather than replace, so a field added since this record was created
+      // still renders with an empty value instead of undefined.
+      custom: { ...effectiveDefaults.custom, ...((record.custom as object) ?? {}) },
+    });
     setModalOpen(true);
   };
 
@@ -556,7 +618,7 @@ export function CrudPage<T extends { id: string }>({
         <h1 className="text-xl font-semibold">{title}</h1>
         <div className="flex flex-wrap items-center gap-2">
           {toolbar}
-          {filterFields && filterFields.length > 0 && (
+          {effectiveFilterFields.length > 0 && (
             <button
               className={clsx("btn-secondary", (showFilters || activeFilterCount > 0) && "!border-primary-400 !text-primary-700 dark:!border-primary-600 dark:!text-primary-300")}
               onClick={() => setShowFilters((s) => !s)}
@@ -599,10 +661,10 @@ export function CrudPage<T extends { id: string }>({
         </div>
       </div>
 
-      {filterFields && filterFields.length > 0 && (showFilters || activeFilterCount > 0) && (
+      {effectiveFilterFields.length > 0 && (showFilters || activeFilterCount > 0) && (
         <div className="shrink-0">
           <FiltersBar
-            fields={filterFields}
+            fields={effectiveFilterFields}
             value={filters}
             onChange={(f) => {
               setFilters(f);
@@ -647,7 +709,7 @@ export function CrudPage<T extends { id: string }>({
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? `Edit ${one}` : `New ${one}`} wide>
         <form onSubmit={form.handleSubmit((v) => saveMutation.mutate(v))} className="space-y-6">
-          <FormFields fields={fields} register={form.register} errors={form.formState.errors} control={form.control} />
+          <FormFields fields={effectiveFields} register={form.register} errors={form.formState.errors} control={form.control} />
           <div className="-mx-5 -mb-5 flex justify-end gap-2 border-t border-slate-200 bg-slate-50/60 px-5 py-3.5 dark:border-slate-800 dark:bg-slate-900/60">
             <button type="button" className="btn-secondary" onClick={() => setModalOpen(false)}>
               Cancel

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import DateTime, ForeignKey, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import BaseModel, TenantScoped
@@ -21,6 +21,10 @@ class Task(TenantScoped, BaseModel):
     created_by_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
     entity_type: Mapped[str | None] = mapped_column(String(50))  # optional link: lead|deal|company|...
     entity_id: Mapped[str | None] = mapped_column(String(32))
+    #: Values for this tenant's custom fields, keyed by field definition key.
+    #: JSON rather than real columns so adding a field never touches the schema
+    #: and one tenant's fields stay invisible to every other.
+    custom: Mapped[dict] = mapped_column(JSON, default=dict)
 
     assigned_to = relationship("User", foreign_keys=[assigned_to_id], lazy="joined")
     created_by = relationship("User", foreign_keys=[created_by_id], lazy="joined")

@@ -5,9 +5,10 @@ from app.core.deps import get_current_user
 from app.core.exceptions import AppError, NotFoundError, PermissionDeniedError
 from app.core.permissions import has_permission
 from app.database.session import get_db
-from app.filtering import FILTERS, apply_filters
+from app.filtering import apply_filters_for
+from app.platform.schema_service import active_custom_fields
 from app.io.registry import SPECS
-from app.io.spec import ImportOptions, build_csv, build_template_csv, parse_csv
+from app.io.spec import IOColumn, ImportOptions, build_csv, build_template_csv, parse_csv
 from app.users.models import User
 
 router = APIRouter(prefix="/io", tags=["import-export"])
@@ -58,10 +59,12 @@ def export_entity(
 ):
     spec = _spec(entity)
     _require(user, spec.module, "read")
-    stmt = apply_filters(spec.base_select(), FILTERS.get(spec.filter_key, {}), filters)
+    stmt = apply_filters_for(db, spec.base_select(), spec.filter_key, filters)
     objs = db.scalars(stmt).all()
     rows = spec.expand(objs) if spec.expand else objs
-    return _csv_response(build_csv(spec, rows), f"{spec.filename}.csv")
+    # A tenant's own fields belong in their export as much as the built-in ones.
+    extra = custom_columns_for(db, spec.filter_key)
+    return _csv_response(build_csv(spec, rows, extra_columns=extra), f"{spec.filename}.csv")
 
 
 @router.get("/{entity}/template")
@@ -91,3 +94,24 @@ async def import_entity(
         raise AppError("No data rows found — the file needs a header row and at least one record", 400)
     result = spec.import_rows(db, user, rows, ImportOptions(send_emails=send_emails))
     return result.as_dict()
+
+
+def custom_columns_for(db, module: str) -> list[IOColumn]:
+    """Export columns for this tenant's custom fields, if the module has any."""
+    from app.schema_registry import CUSTOMISABLE_MODULES
+
+    if module not in CUSTOMISABLE_MODULES:
+        return []
+    columns = []
+    for definition in active_custom_fields(db, module):
+        key = definition.key
+
+        def read(obj, _key=key):
+            values = getattr(obj, "custom", None) or {}
+            value = values.get(_key)
+            if isinstance(value, list):
+                return ", ".join(str(v) for v in value)
+            return "" if value is None else value
+
+        columns.append(IOColumn(key=f"custom.{key}", label=definition.label, value=read))
+    return columns

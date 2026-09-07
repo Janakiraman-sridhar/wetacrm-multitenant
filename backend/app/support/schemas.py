@@ -14,6 +14,9 @@ class TicketBase(ORMModel):
     status: str = "open"
     assigned_to_id: str | None = None
     resolution: str | None = None
+    #: Values for this tenant's custom fields. Validated on flush against the
+    #: tenant's own field definitions; undeclared keys are dropped.
+    custom: dict = {}
 
 
 class TicketCreate(TicketBase):
@@ -29,6 +32,7 @@ class TicketUpdate(ORMModel):
     status: str | None = None
     assigned_to_id: str | None = None
     resolution: str | None = None
+    custom: dict | None = None
 
 
 class TicketOut(TicketBase):

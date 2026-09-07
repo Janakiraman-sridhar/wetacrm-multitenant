@@ -9,7 +9,7 @@ from app.core.crud import apply_updates, get_or_404
 from app.core.deps import require_perm
 from app.core.exceptions import AppError
 from app.core.pagination import PageParams, apply_sort, page_params, paginate
-from app.filtering import FILTERS, apply_filters
+from app.filtering import apply_filters_for
 from app.core.schemas import Message, Page
 from app.database.session import get_db
 from app.deals.models import Deal, DealStage
@@ -43,7 +43,7 @@ def list_leads(filters: str | None = Query(None),
         q = f"%{params.search}%"
         stmt = stmt.where(or_(Lead.title.ilike(q), Lead.contact_name.ilike(q), Lead.company_name.ilike(q), Lead.email.ilike(q)))
     stmt = apply_sort(stmt, Lead, params.sort)
-    stmt = apply_filters(stmt, FILTERS["leads"], filters)
+    stmt = apply_filters_for(db, stmt, "leads", filters)
     return paginate(db, stmt, params)
 
 

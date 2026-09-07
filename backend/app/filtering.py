@@ -17,7 +17,8 @@ from dataclasses import dataclass
 from datetime import date, datetime, time
 from typing import Any
 
-from sqlalchemy import and_
+from sqlalchemy import and_, cast, or_
+from sqlalchemy.types import String as SAString
 
 from app.companies.models import Company
 from app.contacts.models import Contact
@@ -48,7 +49,70 @@ def _end(value: str, t: str):
     return d if t == "date" else datetime.combine(d, time.max)
 
 
-def apply_filters(stmt, fields: dict[str, FF], raw: str | None):
+def custom_field_conditions(model, items: list[dict], allowed: dict[str, str]):
+    """Build conditions for filters that target a tenant's custom fields.
+
+    Custom values live in a JSON column, so there is no `Column` object to hand to
+    `FF`. Comparison goes through the JSON path instead, cast to text — enough for
+    the text, select and number filters the field editor can produce, and indexed
+    by GIN on Postgres.
+
+    `allowed` is the whitelist: only keys the tenant marked filterable are honoured,
+    so this stays as injection-safe as the static registry.
+    """
+    conditions = []
+    for item in items:
+        key = item.get("key", "")
+        if not key.startswith("custom."):
+            continue
+        field_key = key[len("custom."):]
+        kind = allowed.get(field_key)
+        if kind is None:
+            continue
+
+        path = model.custom[field_key]
+        try:
+            if kind in ("text", "textarea", "email", "phone", "url"):
+                value = str(item.get("value", "")).strip()
+                if value:
+                    conditions.append(path.as_string().ilike(f"%{value}%"))
+            elif kind == "select":
+                values = [str(v) for v in (item.get("value") or []) if v not in (None, "")]
+                if values:
+                    conditions.append(path.as_string().in_(values))
+            elif kind == "multiselect":
+                # Stored as a JSON list, so match on the serialised text.
+                values = [str(v) for v in (item.get("value") or []) if v not in (None, "")]
+                if values:
+                    conditions.append(
+                        or_(*[cast(path, SAString).ilike(f'%"{v}"%') for v in values])
+                    )
+            elif kind in ("number", "decimal", "currency"):
+                raw_value = item.get("value")
+                if raw_value not in (None, ""):
+                    value = float(raw_value)
+                    column = path.as_float()
+                    op = item.get("op", "eq")
+                    conditions.append(
+                        {"gte": column >= value, "lte": column <= value}.get(op, column == value)
+                    )
+            elif kind in ("date", "datetime"):
+                # ISO strings sort lexicographically, so a plain range works.
+                text = path.as_string()
+                if item.get("from"):
+                    conditions.append(text >= str(item["from"])[:10])
+                if item.get("to"):
+                    conditions.append(text <= str(item["to"])[:10] + "\uffff")
+            elif kind == "checkbox":
+                value = item.get("value")
+                if isinstance(value, bool):
+                    conditions.append(path.as_boolean().is_(value))
+        except (ValueError, TypeError):
+            continue
+    return conditions
+
+
+def apply_filters(stmt, fields: dict[str, FF], raw: str | None, model=None, custom_allowed=None):
     if not raw:
         return stmt
     try:
@@ -92,6 +156,12 @@ def apply_filters(stmt, fields: dict[str, FF], raw: str | None):
                     conds.append(col.is_(v))
         except (ValueError, TypeError):
             continue
+
+    if model is not None and custom_allowed:
+        try:
+            conds.extend(custom_field_conditions(model, items, custom_allowed))
+        except Exception:  # a bad custom filter must not break the whole list
+            pass
 
     return stmt.where(and_(*conds)) if conds else stmt
 
@@ -168,3 +238,36 @@ FILTERS: dict[str, dict[str, FF]] = {
         "created_at": FF(Invoice.created_at, "datetime"),
     },
 }
+
+
+def custom_filterable(db, module: str) -> dict[str, str]:
+    """Custom fields this tenant marked filterable, as {key: type}.
+
+    Doubles as the whitelist for `custom_field_conditions` — a key not in here is
+    ignored, so the JSON path is never built from arbitrary user input.
+    """
+    from app.platform.schema_service import active_custom_fields
+    from app.schema_registry import CUSTOMISABLE_MODULES
+
+    if module not in CUSTOMISABLE_MODULES:
+        return {}
+    return {
+        d.key: d.field_type for d in active_custom_fields(db, module) if d.filterable
+    }
+
+
+def apply_filters_for(db, stmt, module: str, raw: str | None):
+    """Apply both the built-in filter whitelist and the tenant's custom fields.
+
+    Routers call this instead of `apply_filters` so a custom field becomes
+    filterable everywhere at once — list endpoints and CSV export alike.
+    """
+    from app.schema_registry import model_for
+
+    return apply_filters(
+        stmt,
+        FILTERS.get(module, {}),
+        raw,
+        model=model_for(module),
+        custom_allowed=custom_filterable(db, module),
+    )

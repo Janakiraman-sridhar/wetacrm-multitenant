@@ -15,6 +15,9 @@ class ProductBase(ORMModel):
     tax_rate: float = Field(0, ge=0, le=100)
     stock_qty: int | None = None
     is_active: bool = True
+    #: Values for this tenant's custom fields. Validated on flush against the
+    #: tenant's own field definitions; undeclared keys are dropped.
+    custom: dict = {}
 
 
 class ProductCreate(ProductBase):
@@ -31,6 +34,7 @@ class ProductUpdate(ORMModel):
     tax_rate: float | None = Field(None, ge=0, le=100)
     stock_qty: int | None = None
     is_active: bool | None = None
+    custom: dict | None = None
 
 
 class ProductOut(ProductBase):

@@ -7,7 +7,7 @@ from app.core.crud import apply_updates, get_or_404
 from app.core.deps import require_perm
 from app.core.exceptions import AppError
 from app.core.pagination import PageParams, apply_sort, page_params, paginate
-from app.filtering import FILTERS, apply_filters
+from app.filtering import apply_filters_for
 from app.core.schemas import Message, Page
 from app.database.session import get_db
 from app.notifications.service import notify
@@ -51,7 +51,7 @@ def list_tasks(filters: str | None = Query(None),
         q = f"%{params.search}%"
         stmt = stmt.where(or_(Task.title.ilike(q), Task.description.ilike(q)))
     stmt = apply_sort(stmt, Task, params.sort)
-    stmt = apply_filters(stmt, FILTERS["tasks"], filters)
+    stmt = apply_filters_for(db, stmt, "tasks", filters)
     return paginate(db, stmt, params)
 
 

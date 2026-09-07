@@ -17,6 +17,10 @@ class Contact(TenantScoped, BaseModel):
     notes: Mapped[str | None] = mapped_column(Text)
     tags: Mapped[list] = mapped_column(JSON, default=list)
     owner_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+    #: Values for this tenant's custom fields, keyed by field definition key.
+    #: JSON rather than real columns so adding a field never touches the schema
+    #: and one tenant's fields stay invisible to every other.
+    custom: Mapped[dict] = mapped_column(JSON, default=dict)
 
     company = relationship("Company", lazy="joined")
     owner = relationship("User", lazy="joined")

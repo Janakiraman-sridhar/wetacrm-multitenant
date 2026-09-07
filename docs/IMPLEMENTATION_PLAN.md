@@ -103,7 +103,22 @@ email templates differ correctly and neither sees the other's data.
 
 ---
 
-## Phase 2 — Custom fields engine
+## Phase 2 — Custom fields engine ✅ COMPLETE
+
+*Delivered. 129 tests pass. A tenant can add fields to eight modules, rename or hide the
+built-in ones, and have all of it flow through form, record, table, filter and CSV export
+— invisible to every other tenant. Notes:*
+
+- *Base fields are derived from the models rather than hand-listed, so the field editor
+  cannot drift out of step with the schema.*
+- *`cast(custom['k'], String)` keeps the JSON quotes, so dropdown and number filters
+  matched nothing while the text filter matched through the quotes and hid it. Only the
+  live check caught it; `.as_string()` / `.as_float()` fixed it and there is now a test.*
+- *Pydantic silently strips undeclared keys, so `custom` had to be added to the
+  Create/Update/Out schemas of all eight modules.*
+- *The plan's task 2.6 assumed replacing every page's hardcoded arrays. Layering the
+  tenant's overrides on top of them instead achieves the same result and leaves the pages
+  almost untouched.*
 
 **Goal.** You can add, relabel, reorder and remove fields per client without touching code.
 

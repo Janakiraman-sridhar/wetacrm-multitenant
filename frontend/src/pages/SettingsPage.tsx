@@ -6,13 +6,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmDialog, Modal } from "@/components/Modal";
 import { Select } from "@/components/Select";
 import { Avatar, PageSpinner, StatusBadge } from "@/components/ui";
+import { FieldEditor } from "@/components/FieldEditor";
+import { useModules } from "@/lib/modules";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { API_URL, api, errorMessage, tokenStore } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import type { AppSetting, DealStage, EmailTemplate, Page, Role, Tag, User } from "@/types";
 
-const TABS = ["Company", "Users", "Roles", "Pipeline", "Tags", "Documents", "Email Templates", "System"] as const;
+const TABS = ["Company", "Users", "Roles", "Fields", "Pipeline", "Tags", "Documents", "Email Templates", "System"] as const;
 
 export default function SettingsPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]>("Company");
@@ -41,6 +43,7 @@ export default function SettingsPage() {
       {tab === "Company" && <CompanyProfileTab canWrite={hasPerm("settings:write")} />}
       {tab === "Users" && <UsersTab />}
       {tab === "Roles" && <RolesTab />}
+      {tab === "Fields" && <FieldsTab />}
       {tab === "Pipeline" && <PipelineTab canWrite={hasPerm("settings:write")} />}
       {tab === "Tags" && <TagsTab canWrite={hasPerm("settings:write")} />}
       {tab === "Documents" && <DocumentsTab canWrite={hasPerm("settings:write")} />}
@@ -1593,6 +1596,56 @@ function SystemTab() {
       <p className="px-4 py-3 text-xs text-slate-400">
         Integrations are configured via backend environment variables — see backend/.env.example.
       </p>
+    </div>
+  );
+}
+
+
+// --- Fields ------------------------------------------------------------------
+
+/**
+ * Per-module field configuration for this workspace.
+ *
+ * The module list comes from the server rather than being hardcoded, so it stays in
+ * step with what actually supports custom fields, and the labels follow whatever
+ * this tenant calls each module.
+ */
+function FieldsTab() {
+  const { data: modules } = useModules(false);
+  const { data: catalog } = useQuery({
+    queryKey: ["schema", "modules"],
+    queryFn: async () => (await api.get<{ modules: string[] }>("/schema/modules")).data,
+  });
+  const [selected, setSelected] = useState<string | null>(null);
+
+  const available = (catalog?.modules ?? []).map((key) => ({
+    key,
+    label: modules?.find((m) => m.module_key === key)?.label ?? key,
+  }));
+  const active = selected ?? available[0]?.key ?? null;
+  const activeLabel = available.find((m) => m.key === active)?.label ?? "";
+
+  if (available.length === 0) return <p className="text-slate-400">Loading…</p>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-1.5">
+        {available.map((m) => (
+          <button
+            key={m.key}
+            onClick={() => setSelected(m.key)}
+            className={clsx(
+              "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+              m.key === active
+                ? "bg-primary-600 text-white"
+                : "border border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+            )}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+      {active && <FieldEditor key={active} module={active} label={activeLabel} />}
     </div>
   );
 }

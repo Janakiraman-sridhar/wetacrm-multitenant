@@ -44,8 +44,8 @@ cd backend && .venv/Scripts/python.exe -m pytest          # all
 .venv/Scripts/python.exe -m pytest tests/test_tenant_isolation.py -k search   # one test
 ```
 
-`backend/tests/` holds the tenant-isolation suite (Phase 0) and the template/provisioning
-suite (Phase 1) — 99 tests. Install
+`backend/tests/` holds the tenant-isolation (Phase 0), template/provisioning (Phase 1)
+and custom-field (Phase 2) suites — 129 tests. Install
 test deps with `pip install -r requirements-dev.txt`. There is no frontend test suite;
 `npm run build` (which runs `tsc -b`) is the only typecheck gate.
 
@@ -133,6 +133,39 @@ stages, lead sources, tags, settings and email templates.
   it, and `locked` modules (dashboard, settings) stay on whatever a template says.
 
 `app/database/seed.py` no longer exists — provisioning replaced it.
+
+### Custom fields — how a client gets their own fields
+
+A tenant's field configuration lives in `field_defs`, and `GET /api/v1/schema/{module}`
+serves the merged result. One table does two jobs:
+
+- `is_custom = True` — a field this client invented. Values live in the entity's
+  `custom` JSON column, so adding one never touches the schema and stays invisible to
+  every other tenant. Postgres gets a GIN index on that column.
+- `is_custom = False` — an override on a field the product ships (relabel, reorder,
+  hide). The row holds only the difference from the default, created on first edit.
+
+Base fields are **derived from the SQLAlchemy models** (`app/schema_registry.py`), not
+listed by hand — a hand-written list is a second source of truth that drifts. Curate
+`_LABEL_OVERRIDES` and `_LOCKED_COLUMNS` there when a column needs a nicer name or must
+never be hidden.
+
+Values are validated in a **session `before_flush` hook**, not in each router — same
+reasoning as tenant isolation. Undeclared keys are dropped rather than rejected so a
+stale form still saves. A module's Create/Update/Out schemas must declare `custom` or
+Pydantic silently strips it.
+
+**Filtering a JSON value needs `.as_string()` / `.as_float()`, never `cast(..., String)`.**
+Casting leaves the JSON quoting in place, so `=` and `IN` never match while a substring
+`ILIKE` matches straight through the quotes — a bug that passes a careless test.
+Routers call `apply_filters_for(db, stmt, module, filters)`, which applies the static
+whitelist and the tenant's filterable custom fields together.
+
+Frontend: pages keep their hand-built field and column arrays as the base (they carry
+render details the server cannot know, like which hook supplies a select's options), and
+`useSchemaOverlay` in `CrudPage` layers the tenant's relabels, hides and custom fields on
+top. Custom form values are named `custom.<key>`, which react-hook-form nests into
+exactly the shape the API wants.
 
 ### The sidebar is data, not code
 

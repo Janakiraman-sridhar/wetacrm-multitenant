@@ -14,6 +14,9 @@ class TaskBase(ORMModel):
     assigned_to_id: str | None = None
     entity_type: str | None = None
     entity_id: str | None = None
+    #: Values for this tenant's custom fields. Validated on flush against the
+    #: tenant's own field definitions; undeclared keys are dropped.
+    custom: dict = {}
 
 
 class TaskCreate(TaskBase):
@@ -29,6 +32,7 @@ class TaskUpdate(ORMModel):
     assigned_to_id: str | None = None
     entity_type: str | None = None
     entity_id: str | None = None
+    custom: dict | None = None
 
 
 class TaskOut(TaskBase):

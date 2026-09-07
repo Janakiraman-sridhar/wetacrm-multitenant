@@ -7,7 +7,7 @@ from app.core.crud import apply_updates, get_or_404
 from app.core.deps import require_perm
 from app.core.exceptions import AppError
 from app.core.pagination import PageParams, apply_sort, page_params, paginate
-from app.filtering import FILTERS, apply_filters
+from app.filtering import apply_filters_for
 from app.core.schemas import Message, Page
 from app.database.session import get_db
 from app.notifications.service import notify
@@ -30,7 +30,7 @@ def list_projects(filters: str | None = Query(None), status: str | None = None, 
         q = f"%{params.search}%"
         stmt = stmt.where(or_(Project.name.ilike(q), Project.description.ilike(q)))
     stmt = apply_sort(stmt, Project, params.sort)
-    stmt = apply_filters(stmt, FILTERS["projects"], filters)
+    stmt = apply_filters_for(db, stmt, "projects", filters)
     return paginate(db, stmt, params)
 
 

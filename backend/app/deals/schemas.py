@@ -44,6 +44,9 @@ class DealBase(ORMModel):
     competitors: str | None = None
     notes: str | None = None
     tags: list[str] = []
+    #: Values for this tenant's custom fields. Validated on flush against the
+    #: tenant's own field definitions; undeclared keys are dropped.
+    custom: dict = {}
 
 
 class DealCreate(DealBase):
@@ -63,6 +66,7 @@ class DealUpdate(ORMModel):
     competitors: str | None = None
     notes: str | None = None
     tags: list[str] | None = None
+    custom: dict | None = None
 
 
 class DealOut(DealBase):

@@ -21,6 +21,10 @@ class Project(TenantScoped, BaseModel):
     budget: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     owner_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
     team_ids: Mapped[list] = mapped_column(JSON, default=list)
+    #: Values for this tenant's custom fields, keyed by field definition key.
+    #: JSON rather than real columns so adding a field never touches the schema
+    #: and one tenant's fields stay invisible to every other.
+    custom: Mapped[dict] = mapped_column(JSON, default=dict)
 
     company = relationship("Company", lazy="joined")
     owner = relationship("User", lazy="joined")

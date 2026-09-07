@@ -29,6 +29,9 @@ class ProjectBase(ORMModel):
     budget: float | None = None
     owner_id: str | None = None
     team_ids: list[str] = []
+    #: Values for this tenant's custom fields. Validated on flush against the
+    #: tenant's own field definitions; undeclared keys are dropped.
+    custom: dict = {}
 
 
 class ProjectCreate(ProjectBase):
@@ -45,6 +48,7 @@ class ProjectUpdate(ORMModel):
     budget: float | None = None
     owner_id: str | None = None
     team_ids: list[str] | None = None
+    custom: dict | None = None
 
 
 class ProjectOut(ProjectBase):

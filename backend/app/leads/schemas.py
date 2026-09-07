@@ -23,6 +23,9 @@ class LeadBase(ORMModel):
     notes: str | None = None
     follow_up_at: datetime | None = None
     tags: list[str] = []
+    #: Values for this tenant's custom fields. Validated on flush against the
+    #: tenant's own field definitions; undeclared keys are dropped.
+    custom: dict = {}
 
 
 class LeadCreate(LeadBase):
@@ -42,6 +45,7 @@ class LeadUpdate(ORMModel):
     notes: str | None = None
     follow_up_at: datetime | None = None
     tags: list[str] | None = None
+    custom: dict | None = None
 
 
 class LeadOut(LeadBase):

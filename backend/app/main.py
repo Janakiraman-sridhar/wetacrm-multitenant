@@ -27,6 +27,7 @@ from app.meetings.router import router as meetings_router
 from app.notifications.router import router as notifications_router
 from app.platform.modules_router import router as modules_router
 from app.platform.router import router as platform_router
+from app.platform.schema_router import router as schema_router
 from app.products.router import router as products_router
 from app.projects.router import router as projects_router
 from app.quotations.router import router as quotations_router
@@ -96,6 +97,7 @@ app.include_router(settings_router, prefix=API_V1)
 app.include_router(io_router, prefix=API_V1)
 app.include_router(platform_router, prefix=API_V1)
 app.include_router(modules_router, prefix=API_V1)
+app.include_router(schema_router, prefix=API_V1)
 
 
 @app.get("/health")

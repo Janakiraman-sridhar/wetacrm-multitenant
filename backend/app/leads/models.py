@@ -32,6 +32,10 @@ class Lead(TenantScoped, BaseModel):
     follow_up_at: Mapped[datetime | None] = mapped_column(DateTime)
     converted_deal_id: Mapped[str | None] = mapped_column(String(32))
     tags: Mapped[list] = mapped_column(JSON, default=list)
+    #: Values for this tenant's custom fields, keyed by field definition key.
+    #: JSON rather than real columns so adding a field never touches the schema
+    #: and one tenant's fields stay invisible to every other.
+    custom: Mapped[dict] = mapped_column(JSON, default=dict)
 
     source = relationship("LeadSource", lazy="joined")
     assigned_to = relationship("User", lazy="joined")

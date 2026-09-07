@@ -22,3 +22,9 @@ def get_db():
 # isolation. It lives here so *any* code path that opens a session gets them,
 # rather than depending on main.py import order.
 from app.core import tenancy  # noqa: E402,F401  (import for side effects)
+
+# Validates per-tenant custom field values on flush. Registered here for the
+# same reason as the tenant filter: every session must get it.
+from app.platform.schema_service import register_custom_field_validation  # noqa: E402
+
+register_custom_field_validation()

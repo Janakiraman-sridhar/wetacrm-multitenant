@@ -10,7 +10,7 @@ from app.core.crud import apply_updates, get_or_404
 from app.core.deps import require_perm
 from app.core.exceptions import AppError
 from app.core.pagination import PageParams, apply_sort, page_params, paginate
-from app.filtering import FILTERS, apply_filters
+from app.filtering import apply_filters_for
 from app.core.schemas import Message, Page
 from app.database.session import get_db
 from app.invoices.models import INVOICE_STATUSES, Invoice, InvoiceItem
@@ -43,7 +43,7 @@ def list_invoices(filters: str | None = Query(None), status: str | None = None, 
     if params.search:
         stmt = stmt.where(or_(Invoice.number.ilike(f"%{params.search}%"), Invoice.notes.ilike(f"%{params.search}%")))
     stmt = apply_sort(stmt, Invoice, params.sort)
-    stmt = apply_filters(stmt, FILTERS["invoices"], filters)
+    stmt = apply_filters_for(db, stmt, "invoices", filters)
     return paginate(db, stmt, params)
 
 

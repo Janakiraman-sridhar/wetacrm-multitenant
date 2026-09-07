@@ -8,7 +8,7 @@ from app.contacts.schemas import ContactCreate, ContactOut, ContactUpdate
 from app.core.crud import apply_updates, get_or_404
 from app.core.deps import require_perm
 from app.core.pagination import PageParams, apply_sort, page_params, paginate
-from app.filtering import FILTERS, apply_filters
+from app.filtering import apply_filters_for
 from app.core.schemas import Message, Page
 from app.database.session import get_db
 from app.services import search_sync
@@ -30,7 +30,7 @@ def list_contacts(filters: str | None = Query(None),
         q = f"%{params.search}%"
         stmt = stmt.where(or_(Contact.first_name.ilike(q), Contact.last_name.ilike(q), Contact.position.ilike(q)))
     stmt = apply_sort(stmt, Contact, params.sort)
-    stmt = apply_filters(stmt, FILTERS["contacts"], filters)
+    stmt = apply_filters_for(db, stmt, "contacts", filters)
     return paginate(db, stmt, params)
 
 

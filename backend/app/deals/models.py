@@ -47,6 +47,10 @@ class Deal(TenantScoped, BaseModel):
     status: Mapped[str] = mapped_column(String(10), default="open", index=True)  # open|won|lost
     closed_at: Mapped[datetime | None] = mapped_column(DateTime)
     tags: Mapped[list] = mapped_column(JSON, default=list)
+    #: Values for this tenant's custom fields, keyed by field definition key.
+    #: JSON rather than real columns so adding a field never touches the schema
+    #: and one tenant's fields stay invisible to every other.
+    custom: Mapped[dict] = mapped_column(JSON, default=dict)
 
     stage = relationship("DealStage", lazy="joined")
     company = relationship("Company", lazy="joined")

@@ -1,4 +1,4 @@
-from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import ForeignKey, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import BaseModel, TenantScoped
@@ -21,6 +21,10 @@ class Ticket(TenantScoped, BaseModel):
     status: Mapped[str] = mapped_column(String(20), default="open", index=True)
     assigned_to_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
     resolution: Mapped[str | None] = mapped_column(Text)
+    #: Values for this tenant's custom fields, keyed by field definition key.
+    #: JSON rather than real columns so adding a field never touches the schema
+    #: and one tenant's fields stay invisible to every other.
+    custom: Mapped[dict] = mapped_column(JSON, default=dict)
 
     company = relationship("Company", lazy="joined")
     contact = relationship("Contact", lazy="joined")

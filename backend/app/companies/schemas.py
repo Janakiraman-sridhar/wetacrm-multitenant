@@ -20,6 +20,9 @@ class CompanyBase(ORMModel):
     notes: str | None = None
     tags: list[str] = []
     owner_id: str | None = None
+    #: Values for this tenant's custom fields. Validated on flush against the
+    #: tenant's own field definitions; undeclared keys are dropped.
+    custom: dict = {}
 
 
 class CompanyCreate(CompanyBase):
@@ -41,6 +44,7 @@ class CompanyUpdate(ORMModel):
     notes: str | None = None
     tags: list[str] | None = None
     owner_id: str | None = None
+    custom: dict | None = None
 
 
 class CompanyOut(CompanyBase):

@@ -83,12 +83,18 @@ def cell(v: Any) -> str:
     return str(v)
 
 
-def build_csv(spec: IOSpec, rows: Iterable) -> str:
+def build_csv(spec: IOSpec, rows: Iterable, extra_columns: list[IOColumn] | None = None) -> str:
+    """Serialize rows to CSV.
+
+    `extra_columns` carries a tenant's custom fields, resolved at request time —
+    they cannot live on the static spec because they differ per tenant.
+    """
+    columns = list(spec.columns) + list(extra_columns or [])
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow([c.label for c in spec.columns])
+    w.writerow([c.label for c in columns])
     for obj in rows:
-        w.writerow([cell(c.value(obj) if c.value else getattr(obj, c.key, None)) for c in spec.columns])
+        w.writerow([cell(c.value(obj) if c.value else getattr(obj, c.key, None)) for c in columns])
     return buf.getvalue()
 
 

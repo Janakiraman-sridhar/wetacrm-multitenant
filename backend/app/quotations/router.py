@@ -9,7 +9,7 @@ from app.core.crud import apply_updates, get_or_404
 from app.core.deps import require_perm
 from app.core.exceptions import AppError
 from app.core.pagination import PageParams, apply_sort, page_params, paginate
-from app.filtering import FILTERS, apply_filters
+from app.filtering import apply_filters_for
 from app.core.schemas import Message, Page
 from app.database.session import get_db
 from app.invoices.models import Invoice, InvoiceItem
@@ -64,7 +64,7 @@ def list_quotations(filters: str | None = Query(None), status: str | None = None
     if params.search:
         stmt = stmt.where(or_(Quotation.number.ilike(f"%{params.search}%"), Quotation.notes.ilike(f"%{params.search}%")))
     stmt = apply_sort(stmt, Quotation, params.sort)
-    stmt = apply_filters(stmt, FILTERS["quotations"], filters)
+    stmt = apply_filters_for(db, stmt, "quotations", filters)
     return paginate(db, stmt, params)
 
 

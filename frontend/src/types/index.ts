@@ -256,6 +256,35 @@ export interface Quotation {
   terms?: string | null;
   items: LineItem[];
   created_at: string;
+  /** "standard" sums its items; "insurance" quotes competing insurers and takes one. */
+  kind?: "standard" | "insurance";
+  insurance?: InsuranceQuoteRisk | null;
+  policy_id?: string | null;
+}
+
+export interface InsuranceQuoteOption {
+  insurer_id?: string | null;
+  insurer_name?: string | null;
+  plan_name?: string | null;
+  sum_insured?: number | null;
+  idv?: number | null;
+  premium_net?: number | null;
+  premium_gst?: number | null;
+  premium_gross?: number | null;
+  add_ons?: string[];
+  features?: string[];
+  claim_settlement_ratio?: string | null;
+  recommended?: boolean;
+  /** Exactly one option carries this — it is what the quotation total comes from. */
+  selected?: boolean;
+}
+
+export interface InsuranceQuoteRisk {
+  product_line?: string;
+  registration_no?: string | null;
+  existing_insurer?: string | null;
+  sum_insured?: number | string | null;
+  options?: InsuranceQuoteOption[];
 }
 
 export interface Invoice {
@@ -387,9 +416,26 @@ export interface Tenant {
   suspended_at?: string | null;
 }
 
+export interface TenantUser {
+  id: string;
+  email: string;
+  full_name: string;
+  role?: string | null;
+  is_active: boolean;
+  last_login_at?: string | null;
+  is_owner: boolean;
+}
+
 export interface TenantDetail extends Tenant {
   user_count: number;
   settings: Record<string, unknown>;
+  owner_email?: string | null;
+  owner_name?: string | null;
+  module_count: number;
+  enabled_module_count: number;
+  /** Row counts, keyed by entity — only for modules this workspace has. */
+  record_counts: Record<string, number>;
+  users: TenantUser[];
 }
 
 export interface CrmTemplate {
@@ -529,4 +575,54 @@ export interface PolicyCharts {
   by_insurer: { name: string; count: number; premium: number }[];
   by_product_line: { name: string; count: number; premium: number }[];
   by_status: { name: string; count: number }[];
+}
+
+// --- loans --------------------------------------------------------------------
+
+export type LoanStatus =
+  | "enquiry" | "documents" | "logged_in" | "sanctioned" | "disbursed" | "rejected";
+
+export interface Loan {
+  id: string;
+  customer_id: string;
+  loan_type: string;
+  lender_id?: string | null;
+  owner_id?: string | null;
+  status: LoanStatus;
+  amount_requested?: string | number | null;
+  amount_sanctioned?: string | number | null;
+  tenure_months?: number | null;
+  interest_rate?: string | number | null;
+  payout_percent?: string | number | null;
+  /** Derived server-side from the sanctioned amount — never sent on write. */
+  expected_payout?: string | number | null;
+  actual_payout?: string | number | null;
+  applied_on?: string | null;
+  sanctioned_on?: string | null;
+  disbursed_on?: string | null;
+  rejected_reason?: string | null;
+  remarks?: string | null;
+  tags: string[];
+  custom: Record<string, any>;
+  customer?: Policy["customer"];
+  lender?: Master | null;
+  owner?: UserBrief | null;
+  is_open?: boolean;
+}
+
+export interface LoanStats {
+  open_cases: number;
+  sanctioned_value: string | number;
+  disbursed_value: string | number;
+  expected_payout: string | number;
+  received_payout: string | number;
+  outstanding_payout: string | number;
+  by_status: Record<string, number>;
+}
+
+export interface LoanBoardColumn {
+  status: LoanStatus;
+  label: string;
+  loans: Loan[];
+  value: string | number;
 }

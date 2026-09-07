@@ -24,6 +24,7 @@ from app.leads.models import Lead
 from app.products.models import Product
 from app.projects.models import Project
 from app.support.models import Ticket
+from app.loans.models import Loan
 from app.policies.models import Policy
 from app.tasks.models import Task
 
@@ -39,6 +40,7 @@ CUSTOMISABLE_MODELS: dict[str, Any] = {
     "projects": Project,
     "support": Ticket,
     "policies": Policy,
+    "loans": Loan,
 }
 
 CUSTOMISABLE_MODULES = list(CUSTOMISABLE_MODELS)
@@ -58,6 +60,7 @@ _LOCKED_COLUMNS: dict[str, set[str]] = {
     "projects": {"name", "status"},
     "support": {"number", "subject", "status"},
     "policies": {"policy_number", "product_line", "customer_id", "status"},
+    "loans": {"customer_id", "loan_type", "status"},
 }
 
 # Labels the column name does not produce well on its own.
@@ -99,6 +102,18 @@ _LABEL_OVERRIDES = {
     "commission_percent": "Commission %",
     "commission_amount": "Commission amount",
     "sourcing_channel": "Sourcing channel",
+    "lender_id": "Lender",
+    "loan_type": "Loan type",
+    "amount_requested": "Amount requested",
+    "amount_sanctioned": "Amount sanctioned",
+    "tenure_months": "Tenure (months)",
+    "interest_rate": "Interest rate (%)",
+    "payout_percent": "Payout %",
+    "expected_payout": "Expected payout",
+    "actual_payout": "Payout received",
+    "applied_on": "Applied on",
+    "sanctioned_on": "Sanctioned on",
+    "disbursed_on": "Disbursed on",
 }
 
 FIELD_TYPES = [

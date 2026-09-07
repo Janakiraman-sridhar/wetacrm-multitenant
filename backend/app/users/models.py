@@ -27,8 +27,12 @@ class User(TenantScoped, BaseModel):
 
     A platform Super Admin is the one user kind with no tenant — `tenant_id` and
     `role_id` are both null and `is_platform_admin` is true. They authenticate into
-    the platform console, and reach tenant data only by impersonating a tenant user
-    (which is audited).
+    the platform console and cannot reach tenant data at all: `get_current_user`
+    refuses any token whose tenant is not the user's own, and there is no impersonation.
+
+    When a tenant is deleted its users' addresses are tombstoned (see
+    `service.release_tenant_users`) so the same address can be used again — the row
+    survives the retention window, the address does not stay reserved by it.
     """
 
     __tablename__ = "users"

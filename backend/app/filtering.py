@@ -25,6 +25,7 @@ from app.contacts.models import Contact
 from app.deals.models import Deal
 from app.invoices.models import Invoice
 from app.leads.models import Lead
+from app.loans.models import Loan
 from app.policies.models import Policy
 from app.projects.models import Project
 from app.quotations.models import Quotation
@@ -185,6 +186,16 @@ FILTERS: dict[str, dict[str, FF]] = {
         "start_date": FF(Policy.start_date, "date"),
         "premium_gross": FF(Policy.premium_gross, "number"),
         "sum_insured": FF(Policy.sum_insured, "number"),
+    },
+    "loans": {
+        "loan_type": FF(Loan.loan_type, "select"),
+        "status": FF(Loan.status, "select"),
+        "lender_id": FF(Loan.lender_id, "select"),
+        "owner_id": FF(Loan.owner_id, "select"),
+        "amount_requested": FF(Loan.amount_requested, "number"),
+        "amount_sanctioned": FF(Loan.amount_sanctioned, "number"),
+        "applied_on": FF(Loan.applied_on, "date"),
+        "disbursed_on": FF(Loan.disbursed_on, "date"),
     },
     "companies": {
         "industry": FF(Company.industry, "text"),

@@ -9,9 +9,11 @@ import {
 
 import { DateRangePicker, PresetKey, presetRange } from "@/components/DateRangePicker";
 import { DrilldownModal, DrilldownTarget } from "@/components/DrilldownModal";
+import { CustomerGrowth, InsuranceReports } from "@/components/InsuranceReports";
 import { PageSpinner, StatusBadge } from "@/components/ui";
 import { api } from "@/lib/api";
 import { formatMoney } from "@/lib/format";
+import { useModules } from "@/lib/modules";
 
 const PIE_COLORS = ["#4F46E5", "#10B981", "#F59E0B", "#EF4444", "#0EA5E9", "#8B5CF6", "#EC4899", "#64748B"];
 
@@ -49,6 +51,8 @@ const TEMPLATES = [
 ] as const;
 
 type TemplateKey = (typeof TEMPLATES)[number]["key"];
+
+type ReportMode = "sales" | "insurance";
 
 function periodLabel(period: string, granularity: string): string {
   const d = new Date(granularity === "month" ? `${period}-01T00:00:00` : `${period}T00:00:00`);
@@ -105,11 +109,23 @@ export default function Reports() {
   const [preset, setPreset] = useState<PresetKey>("12m");
   const [range, setRange] = useState(() => presetRange("12m"));
   const [drilldown, setDrilldown] = useState<DrilldownTarget | null>(null);
+  const [chosenMode, setChosenMode] = useState<ReportMode | null>(null);
   const { start, end } = range;
+
+  // Which report families this workspace has. A tenant with a policy book opens on
+  // the insurance set: those are the reports an agency works from daily, and the
+  // sales charts would otherwise greet them mostly empty. The switch is there for
+  // the minority of workspaces that run both.
+  const { data: modules } = useModules();
+  const has = (key: string) => (modules ?? []).some((m) => m.module_key === key);
+  const hasInsurance = has("policies");
+  const hasSales = has("deals") || has("invoices");
+  const mode: ReportMode = chosenMode ?? (hasInsurance ? "insurance" : "sales");
 
   const { data, isLoading } = useQuery({
     queryKey: ["report-template", template, start, end],
     queryFn: async () => (await api.get(`/reports/templates/${template}`, { params: { start, end } })).data,
+    enabled: mode === "sales",
   });
 
   const open = (metric: string, label: string) => setDrilldown({ metric, label });
@@ -121,20 +137,53 @@ export default function Reports() {
         <div>
           <h1 className="text-xl font-semibold">Reports</h1>
           <p className="text-sm text-slate-400">
-            Predefined executive reports over your sales data. Every chart has its underlying records one click away.
+            {mode === "insurance"
+              ? "The reports an agency works from — renewals, production, retention and payouts."
+              : "Predefined executive reports over your sales data. Every chart has its underlying records one click away."}
           </p>
         </div>
-        <DateRangePicker
-          preset={preset}
-          start={start}
-          end={end}
-          onChange={(p, s, e) => {
-            setPreset(p);
-            setRange({ start: s, end: e });
-          }}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          {hasInsurance && hasSales && (
+            <div className="flex overflow-hidden rounded-lg border border-slate-300 dark:border-slate-700">
+              {(["sales", "insurance"] as const).map((m) => (
+                <button
+                  key={m}
+                  className={clsx(
+                    "px-3 py-1.5 text-sm capitalize transition-colors",
+                    mode === m
+                      ? "bg-primary-600 text-white"
+                      : "text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  )}
+                  onClick={() => setChosenMode(m)}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          )}
+          {mode === "sales" && (
+            <DateRangePicker
+              preset={preset}
+              start={start}
+              end={end}
+              onChange={(p, s, e) => {
+                setPreset(p);
+                setRange({ start: s, end: e });
+              }}
+            />
+          )}
+        </div>
       </div>
 
+      {mode === "insurance" && (
+        <>
+          <InsuranceReports />
+          <CustomerGrowth />
+        </>
+      )}
+
+      {mode === "sales" && (
+      <>
       {/* Template picker */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
         {TEMPLATES.map(({ key, label, icon: Icon, description }) => (
@@ -469,6 +518,8 @@ export default function Reports() {
             {active.label} · {start} → {end} · click "Data" on any section to inspect and export the records behind it.
           </p>
         </>
+      )}
+      </>
       )}
 
       <DrilldownModal target={drilldown} start={start} end={end} onClose={() => setDrilldown(null)} />

@@ -2,7 +2,11 @@
 
 Every endpoint here is guarded by `get_platform_admin` and runs in `platform_scope()`,
 which is the *only* place tenant filtering is deliberately switched off. Actions are
-recorded in `platform_audit_logs` against the real admin, including impersonation.
+recorded in `platform_audit_logs` against the admin who performed them.
+
+A platform admin has no route into a tenant's own CRM: there is no impersonation, and
+`get_current_user` refuses any token whose tenant is not the user's own. Everything an
+admin can do to a workspace — its modules, its template, its status — is done from here.
 """
 
 from fastapi import APIRouter, Depends, Request
@@ -12,7 +16,6 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_platform_admin
 from app.core.exceptions import AppError, NotFoundError
 from app.core.schemas import Message
-from app.core.security import create_impersonation_token
 from app.core.config import settings
 from app.core.tenancy import platform_scope, tenant_scope
 from app.database.base import utcnow
@@ -23,11 +26,11 @@ from app.platform.models import CrmTemplate, Tenant, TenantModule
 from app.platform.modules_router import list_tenant_modules
 from app.platform.template_schema import TemplateError, parse_template
 from app.platform.schemas import (
-    ImpersonateIn, ImpersonateOut, PlatformStatsOut, TemplateClone, TemplateDetailOut,
-    TemplateOut, TemplateUpdate, TenantCreate, TenantDetailOut, TenantModuleUpdate,
-    TenantOut, TenantUpdate,
+    PlatformStatsOut, TemplateClone, TemplateCreate, TemplateDetailOut, TemplateOut,
+    TemplateUpdate, TenantCreate, TenantDetailOut, TenantModuleUpdate, TenantOut,
+    TenantUpdate,
 )
-from app.users.models import Role, User
+from app.users.models import User
 
 router = APIRouter(prefix="/platform", tags=["platform"])
 
@@ -55,7 +58,13 @@ def create_tenant(
     with platform_scope():
         clash = db.scalar(select(User).where(User.email == payload.owner_email))
     if clash:
-        raise AppError("That owner email is already in use on the platform", 409)
+        # A deleted tenant's addresses are tombstoned on delete, so a clash here is
+        # always with a live workspace — say which one, because "already in use" with
+        # no idea where is a dead end for whoever is looking at the screen.
+        with platform_scope():
+            holder = db.get(Tenant, clash.tenant_id) if clash.tenant_id else None
+        where = f" in {holder.name}" if holder else " by a platform administrator"
+        raise AppError(f"That email already belongs to a user{where}", 409)
 
     slug = service.unique_slug(db, payload.slug or service.slugify(payload.name))
     tenant = service.provision_tenant(
@@ -156,59 +165,20 @@ def delete_tenant(
         raise NotFoundError("Tenant")
     if tenant.slug == settings.default_tenant_slug:
         raise AppError("The default workspace cannot be deleted", 400)
+    # Free the addresses before marking the tenant gone: `users.email` is globally
+    # unique, so leaving them in place would refuse this client's own email if they
+    # were re-created — which is exactly what someone does after a mistaken delete.
+    released = service.release_tenant_users(db, tenant.id)
+
     with platform_scope():
         tenant.status = "deleted"
         tenant.deleted_at = utcnow()
-        service.platform_audit(db, admin.id, "tenant.delete", tenant.id, {"name": tenant.name}, _client_ip(request))
-        db.commit()
-    return {"detail": "Tenant deleted"}
-
-
-@router.post("/tenants/{tenant_id}/impersonate", response_model=ImpersonateOut)
-def impersonate(
-    tenant_id: str,
-    payload: ImpersonateIn,
-    request: Request,
-    db: Session = Depends(get_db),
-    admin: User = Depends(get_platform_admin),
-):
-    """Mint a short-lived token to act as a tenant user, for support.
-
-    The token carries an `imp` claim naming the real admin, and the start is
-    audited. The frontend shows a persistent banner for the whole session.
-    """
-    tenant = service.get_tenant(db, tenant_id)
-    if not tenant or tenant.deleted_at:
-        raise NotFoundError("Tenant")
-
-    with tenant_scope(tenant.id):
-        if payload.user_id:
-            target = db.get(User, payload.user_id)
-        else:
-            target = db.scalar(
-                select(User).join(Role, User.role_id == Role.id)
-                .where(Role.name == "Super Admin", User.is_active.is_(True))
-                .order_by(User.created_at)
-            ) or db.scalar(select(User).where(User.is_active.is_(True)).order_by(User.created_at))
-        if not target:
-            raise NotFoundError("Tenant user")
-        target_email = target.email
-        target_id = target.id
-
-    with platform_scope():
         service.platform_audit(
-            db, admin.id, "tenant.impersonate.start", tenant.id,
-            {"acting_as": target_email, "user_id": target_id}, _client_ip(request),
+            db, admin.id, "tenant.delete", tenant.id,
+            {"name": tenant.name, "users_released": released}, _client_ip(request),
         )
         db.commit()
-
-    return {
-        "access_token": create_impersonation_token(target_id, tenant.id, admin.id),
-        "token_type": "bearer",
-        "expires_in_minutes": settings.impersonation_token_expire_minutes,
-        "tenant": tenant,
-        "acting_as_email": target_email,
-    }
+    return {"detail": "Tenant deleted"}
 
 
 @router.get("/stats", response_model=PlatformStatsOut)
@@ -228,12 +198,66 @@ def stats(db: Session = Depends(get_db), admin: User = Depends(get_platform_admi
     }
 
 
+#: What the console counts per workspace, and the module each count belongs to. Only
+#: modules the tenant actually has are counted — a "0 policies" line for a general CRM
+#: that has no Policies module is noise pretending to be information.
+_RECORD_COUNTS = [
+    ("contacts", "customers", "app.contacts.models", "Contact"),
+    ("companies", "companies", "app.companies.models", "Company"),
+    ("policies", "policies", "app.policies.models", "Policy"),
+    ("loans", "loans", "app.loans.models", "Loan"),
+    ("quotations", "quotations", "app.quotations.models", "Quotation"),
+    ("deals", "deals", "app.deals.models", "Deal"),
+    ("leads", "leads", "app.leads.models", "Lead"),
+    ("tasks", "tasks", "app.tasks.models", "Task"),
+]
+
+
 def _detail(db: Session, tenant: Tenant) -> dict:
-    with platform_scope():
-        count = db.scalar(select(func.count()).select_from(User).where(User.tenant_id == tenant.id)) or 0
+    """Everything the console shows about one workspace.
+
+    Assembled here rather than left to a handful of separate calls, because the
+    tenant page is the one screen where an admin asks "what *is* this client" and
+    every answer should already be on it.
+    """
+    import importlib
+
     data = TenantOut.model_validate(tenant).model_dump()
-    data["user_count"] = count
     data["settings"] = tenant.settings or {}
+
+    with tenant_scope(tenant.id):
+        users = list(db.scalars(select(User).order_by(User.created_at)).all())
+        modules = list(db.scalars(select(TenantModule)).all())
+        enabled_keys = {m.module_key for m in modules if m.enabled}
+
+        counts = {}
+        for module_key, label, module_path, class_name in _RECORD_COUNTS:
+            if module_key not in enabled_keys:
+                continue
+            model = getattr(importlib.import_module(module_path), class_name)
+            counts[label] = db.scalar(select(func.count()).select_from(model)) or 0
+
+    owner = next((u for u in users if u.id == tenant.owner_user_id), None) or (
+        users[0] if users else None
+    )
+    data["user_count"] = len(users)
+    data["owner_email"] = owner.email if owner else None
+    data["owner_name"] = owner.full_name if owner else None
+    data["module_count"] = len(modules)
+    data["enabled_module_count"] = len(enabled_keys)
+    data["record_counts"] = counts
+    data["users"] = [
+        {
+            "id": u.id,
+            "email": u.email,
+            "full_name": u.full_name,
+            "role": u.role.name if u.role else None,
+            "is_active": u.is_active,
+            "last_login_at": u.last_login_at,
+            "is_owner": bool(owner and u.id == owner.id),
+        }
+        for u in users
+    ]
     return data
 
 
@@ -278,6 +302,61 @@ def get_template_detail(
     return data
 
 
+def _copy_template(
+    db: Session, admin: User, source_key: str, payload: TemplateClone, action: str, ip: str | None
+) -> dict:
+    """Create a custom template from an existing one.
+
+    Both "clone" and "new" land here, because they are the same operation seen from
+    two angles: a new template must start from a working one or it provisions a
+    workspace with no roles and no stages, which nobody notices until the owner
+    cannot sign in.
+    """
+    with platform_scope():
+        source = db.scalar(select(CrmTemplate).where(CrmTemplate.key == source_key))
+        if source is None:
+            raise NotFoundError("Template")
+        if db.scalar(select(CrmTemplate).where(CrmTemplate.key == payload.key)):
+            raise AppError("A template with that key already exists", 409)
+
+        config = dict(source.config or {})
+        config["key"] = payload.key
+        config["name"] = payload.name
+        if payload.description is not None:
+            config["description"] = payload.description
+
+        created = CrmTemplate(
+            key=payload.key,
+            name=payload.name,
+            description=payload.description or source.description,
+            version=1,
+            is_system=False,
+            config=config,
+        )
+        db.add(created)
+        service.platform_audit(
+            db, admin.id, action, None, {"from": source.key, "to": payload.key}, ip
+        )
+        db.commit()
+
+    data = _template_summary(created)
+    data["config"] = created.config
+    return data
+
+
+@router.post("/templates", response_model=TemplateDetailOut)
+def create_template(
+    payload: TemplateCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_platform_admin),
+):
+    """Create a new custom template, starting from `base_key`."""
+    return _copy_template(
+        db, admin, payload.base_key, payload, "template.create", _client_ip(request)
+    )
+
+
 @router.post("/templates/{key}/clone", response_model=TemplateDetailOut)
 def clone_template(
     key: str,
@@ -291,37 +370,7 @@ def clone_template(
     System templates stay read-only: they are refreshed from the bundled JSON files
     whenever their version increases, so edits to them would be overwritten.
     """
-    with platform_scope():
-        source = db.scalar(select(CrmTemplate).where(CrmTemplate.key == key))
-        if source is None:
-            raise NotFoundError("Template")
-        if db.scalar(select(CrmTemplate).where(CrmTemplate.key == payload.key)):
-            raise AppError("A template with that key already exists", 409)
-
-        config = dict(source.config or {})
-        config["key"] = payload.key
-        config["name"] = payload.name
-        if payload.description is not None:
-            config["description"] = payload.description
-
-        clone = CrmTemplate(
-            key=payload.key,
-            name=payload.name,
-            description=payload.description or source.description,
-            version=1,
-            is_system=False,
-            config=config,
-        )
-        db.add(clone)
-        service.platform_audit(
-            db, admin.id, "template.clone", None,
-            {"from": source.key, "to": payload.key}, _client_ip(request),
-        )
-        db.commit()
-
-    data = _template_summary(clone)
-    data["config"] = clone.config
-    return data
+    return _copy_template(db, admin, key, payload, "template.clone", _client_ip(request))
 
 
 @router.delete("/templates/{key}", response_model=Message)

@@ -13,7 +13,6 @@ class Settings(BaseSettings):
     jwt_secret: str = "dev-secret-change-in-production"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
-    impersonation_token_expire_minutes: int = 60
     cors_origins: str = "http://localhost:5173"
     # Public URL of the frontend app, used in emails (welcome, password reset).
     # Falls back to the first CORS origin when left blank.

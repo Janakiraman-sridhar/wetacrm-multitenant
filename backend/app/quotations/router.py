@@ -14,8 +14,15 @@ from app.core.schemas import Message, Page
 from app.database.session import get_db
 from app.invoices.models import Invoice, InvoiceItem
 from app.invoices.schemas import InvoiceOut
-from app.quotations.models import QUOTATION_STATUSES, Quotation, QuotationItem
-from app.quotations.schemas import QuotationCreate, QuotationOut, QuotationUpdate, SendQuotationIn
+from app.policies.models import Policy
+from app.policies.schemas import PolicyOut
+from app.policies.service import derive_status
+from app.quotations import insurance as insurance_service
+from app.quotations.comparison_pdf import comparison_pdf
+from app.quotations.models import QUOTATION_KINDS, QUOTATION_STATUSES, Quotation, QuotationItem
+from app.quotations.schemas import (
+    ConvertToPolicyIn, QuotationCreate, QuotationOut, QuotationUpdate, SendQuotationIn,
+)
 from app.services import billing, storage
 from app.services.email import email_configured, send_templated
 from app.services.numbering import next_number
@@ -24,6 +31,20 @@ from app.settings.models import Setting
 from app.users.models import User
 
 router = APIRouter(prefix="/quotations", tags=["quotations"])
+
+
+def _set_totals(quotation: Quotation) -> None:
+    """An insurance quotation totals the *selected* option, not the sum of them.
+
+    See `app/quotations/insurance.py` — the options are competing quotes for the
+    same cover, so adding them together would print a number nobody will pay.
+    """
+    subtotal, tax_total, total = insurance_service.totals(quotation.insurance)
+    quotation.items.clear()
+    quotation.subtotal = subtotal
+    quotation.tax_total = tax_total
+    quotation.discount = 0
+    quotation.total = total
 
 
 def _set_items(db: Session, quotation: Quotation, items: list[dict], discount) -> None:
@@ -78,6 +99,10 @@ def create_quotation(payload: QuotationCreate, db: Session = Depends(get_db), us
     data = payload.model_dump()
     items = data.pop("items", [])
     discount = data.pop("discount", 0)
+    if data["kind"] not in QUOTATION_KINDS:
+        raise AppError(f"Invalid kind. Expected one of {QUOTATION_KINDS}")
+    if data["kind"] == "insurance":
+        data["insurance"] = insurance_service.clean_risk(data.get("insurance"))
     data["issue_date"] = data.get("issue_date") or date.today()
     template = _setting(db, "quotation_template")
     if not data.get("terms") and template.get("default_terms"):
@@ -85,7 +110,10 @@ def create_quotation(payload: QuotationCreate, db: Session = Depends(get_db), us
     quotation = Quotation(**data, number=next_number(db, "quotation"), created_by_id=user.id)
     db.add(quotation)
     db.flush()
-    _set_items(db, quotation, items, discount)
+    if quotation.kind == "insurance":
+        _set_totals(quotation)
+    else:
+        _set_items(db, quotation, items, discount)
     audit(db, user.id, "create", "quotation", quotation.id, {"number": quotation.number})
     if quotation.deal_id:
         log_activity(db, "deal", quotation.deal_id, "system", f"Quotation {quotation.number} created", user_id=user.id)
@@ -99,10 +127,18 @@ def update_quotation(quotation_id: str, payload: QuotationUpdate, db: Session = 
     data = payload.model_dump(exclude_unset=True)
     if data.get("status") and data["status"] not in QUOTATION_STATUSES:
         raise AppError(f"Invalid status. Expected one of {QUOTATION_STATUSES}")
+    if data.get("kind") and data["kind"] not in QUOTATION_KINDS:
+        raise AppError(f"Invalid kind. Expected one of {QUOTATION_KINDS}")
     items = data.pop("items", None)
     discount = data.pop("discount", None)
+    insurance_changed = "insurance" in data
+    if insurance_changed:
+        data["insurance"] = insurance_service.clean_risk(data["insurance"])
     changes = apply_updates(quotation, data)
-    if items is not None or discount is not None:
+    if quotation.kind == "insurance":
+        if insurance_changed or "kind" in changes:
+            _set_totals(quotation)
+    elif items is not None or discount is not None:
         _set_items(db, quotation,
                    items if items is not None else [
                        {"product_id": i.product_id, "name": i.name, "description": i.description,
@@ -112,7 +148,8 @@ def update_quotation(quotation_id: str, payload: QuotationUpdate, db: Session = 
                    discount if discount is not None else quotation.discount)
         changes["items"] = ["updated", "updated"]
     if changes:
-        audit(db, user.id, "update", "quotation", quotation.id, {k: v for k, v in changes.items() if k != "items"})
+        audit(db, user.id, "update", "quotation", quotation.id,
+              {k: v for k, v in changes.items() if k not in ("items", "insurance")})
     db.commit()
     return quotation
 
@@ -154,9 +191,92 @@ def send_quotation(quotation_id: str, payload: SendQuotationIn, db: Session = De
     return quotation
 
 
+@router.get("/{quotation_id}/comparison.pdf", dependencies=[Depends(require_perm("quotations:read"))])
+def quotation_comparison_pdf(quotation_id: str, db: Session = Depends(get_db)):
+    """The insurer-by-insurer sheet an agent hands the customer."""
+    quotation = get_or_404(db, Quotation, quotation_id, "Quotation")
+    if quotation.kind != "insurance":
+        raise AppError("Only insurance quotations have a comparison sheet", 400)
+    if not (quotation.insurance or {}).get("options"):
+        raise AppError("Add at least one insurer option before generating the comparison", 400)
+    pdf = comparison_pdf(quotation, _company_profile(db), _logo_bytes(db))
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{quotation.number}-comparison.pdf"'})
+
+
+@router.post("/{quotation_id}/convert-to-policy", response_model=PolicyOut)
+def convert_to_policy(
+    quotation_id: str,
+    payload: ConvertToPolicyIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("policies:write")),
+):
+    """Book the selected option as a policy.
+
+    The insurance counterpart of convert-to-invoice: an agency's quotation ends in a
+    policy, not a bill. Only the *selected* option is carried across — the others
+    stay on the quotation as the record of what was compared.
+    """
+    quotation = get_or_404(db, Quotation, quotation_id, "Quotation")
+    if quotation.kind != "insurance":
+        raise AppError("Only an insurance quotation converts to a policy", 400)
+    if quotation.policy_id:
+        raise AppError("This quotation has already been converted to a policy", 409)
+    if not quotation.contact_id:
+        raise AppError("Set the customer on the quotation before converting it", 400)
+
+    option = insurance_service.selected_option(quotation.insurance)
+    if option is None:
+        raise AppError("Select the option the customer went with before converting", 400)
+
+    # Checked here as well as on the create route: a duplicate number would otherwise
+    # surface as a database integrity error, i.e. a 500 on a mistyped policy number.
+    if db.scalar(select(Policy).where(Policy.policy_number == payload.policy_number)):
+        raise AppError(f"Policy number {payload.policy_number} already exists", 409)
+
+    risk = quotation.insurance or {}
+    data = payload.model_dump()
+    policy = Policy(
+        policy_number=data["policy_number"],
+        product_line=risk.get("product_line") or "general",
+        plan_name=option.get("plan_name"),
+        insurer_id=option.get("insurer_id"),
+        customer_id=quotation.contact_id,
+        owner_id=quotation.created_by_id or user.id,
+        issue_date=data.get("issue_date") or date.today(),
+        start_date=data.get("start_date"),
+        expiry_date=data.get("expiry_date"),
+        premium_net=option.get("premium_net"),
+        premium_gst=option.get("premium_gst"),
+        premium_gross=option.get("premium_gross"),
+        sum_insured=option.get("sum_insured") or risk.get("sum_insured"),
+        currency=quotation.currency,
+        payment_mode=data.get("payment_mode"),
+        registration_no=risk.get("registration_no"),
+        sourcing_channel="quotation",
+        remarks=f"Converted from quotation {quotation.number}",
+        status="active",
+    )
+    policy.status = derive_status(policy)
+    db.add(policy)
+    db.flush()
+
+    quotation.policy_id = policy.id
+    quotation.status = "converted"
+    log_activity(db, "contact", quotation.contact_id, "system",
+                 f"Quotation {quotation.number} booked as policy {policy.policy_number}",
+                 user_id=user.id)
+    audit(db, user.id, "convert", "quotation", quotation.id,
+          {"policy": policy.policy_number, "insurer": option.get("insurer_name")})
+    db.commit()
+    return policy
+
+
 @router.post("/{quotation_id}/convert", response_model=InvoiceOut)
 def convert_to_invoice(quotation_id: str, db: Session = Depends(get_db), user: User = Depends(require_perm("invoices:write"))):
     quotation = get_or_404(db, Quotation, quotation_id, "Quotation")
+    if quotation.kind == "insurance":
+        raise AppError("An insurance quotation converts to a policy, not an invoice", 400)
     if quotation.status == "converted":
         raise AppError("Quotation is already converted to an invoice", 409)
     invoice = Invoice(

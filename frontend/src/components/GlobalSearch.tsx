@@ -12,6 +12,9 @@ const TYPE_ROUTES: Record<string, string> = {
   deal: "/deals",
   task: "/tasks",
   project: "/projects",
+  policy: "/policies",
+  loan: "/loans",
+  quotation: "/quotations",
 };
 
 interface Hit {

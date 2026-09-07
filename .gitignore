@@ -31,3 +31,6 @@ docker/data/
 *.db.bak
 *.pre-phase0.bak
 .pytest_cache/
+
+# Build artefacts that change on every build
+tsconfig.tsbuildinfo

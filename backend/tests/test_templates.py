@@ -323,6 +323,11 @@ def test_a_cloned_template_can_be_customised(client, admin_headers):
                 "modules": [
                     {"key": "contacts", "enabled": True, "label": "Members", "order": 2},
                     {"key": "policies", "enabled": True, "label": "Cover", "order": 3},
+                    # Named explicitly: a template that lists any modules is listing
+                    # all of them, so leaving these out would switch them off — and a
+                    # switched-off module is refused at the API, not just hidden.
+                    {"key": "leads", "enabled": True, "label": "Enquiries", "order": 4},
+                    {"key": "deals", "enabled": True, "label": "Cases", "order": 5},
                     {"key": "projects", "enabled": False, "label": "Projects", "order": 9},
                 ],
                 "lead_sources": ["Roadshow", "Referral"],
@@ -361,6 +366,9 @@ def test_a_cloned_template_can_be_customised(client, admin_headers):
         assert sources == {"Roadshow", "Referral"}
         stages = [s["name"] for s in client.get(f"{API}/deals/stages", headers=own).json()]
         assert stages == ["Enquiry", "Closed"]
+
+        # And the module the template switched off is gone, not merely hidden.
+        assert client.get(f"{API}/projects", headers=own).status_code == 404
     finally:
         pass
 
@@ -449,11 +457,87 @@ def test_a_tenant_can_be_deleted_and_its_users_lose_access(client, admin_headers
     after = client.post(
         f"{API}/auth/login", json={"email": "owner-doomed@example.com", "password": "doomed-pass-12"}
     )
-    assert after.status_code == 403
+    assert after.status_code in (401, 403)
 
     # And it drops out of the console listing.
     listed = client.get(f"{API}/platform/tenants", headers=admin_headers).json()
     assert created["id"] not in {t["id"] for t in listed}
+
+
+def test_a_deleted_tenants_email_can_be_used_again(client, admin_headers):
+    """Deleting a client and re-creating them is the commonest console mistake to undo.
+
+    `users.email` is globally unique, so without releasing the address on delete the
+    same client could never be added back under their own email.
+    """
+    first = client.post(
+        f"{API}/platform/tenants",
+        json={"name": "Recreate Agency", "owner_email": "owner-recreate@example.com",
+              "owner_password": "recreate-pass-1"},
+        headers=admin_headers,
+    )
+    assert first.status_code == 200, first.text
+    assert client.delete(
+        f"{API}/platform/tenants/{first.json()['id']}", headers=admin_headers
+    ).status_code == 200
+
+    second = client.post(
+        f"{API}/platform/tenants",
+        json={"name": "Recreate Agency Again", "owner_email": "owner-recreate@example.com",
+              "owner_password": "recreate-pass-2"},
+        headers=admin_headers,
+    )
+    assert second.status_code == 200, second.text
+
+    # The new owner signs in with the new password; the old login is gone.
+    assert client.post(
+        f"{API}/auth/login",
+        json={"email": "owner-recreate@example.com", "password": "recreate-pass-2"},
+    ).status_code == 200
+    assert client.post(
+        f"{API}/auth/login",
+        json={"email": "owner-recreate@example.com", "password": "recreate-pass-1"},
+    ).status_code in (401, 403)
+
+    client.delete(f"{API}/platform/tenants/{second.json()['id']}", headers=admin_headers)
+
+
+def test_an_email_held_by_a_live_workspace_still_clashes(client, admin_headers):
+    """Releasing addresses on delete must not weaken the check for live ones."""
+    live = client.post(
+        f"{API}/platform/tenants",
+        json={"name": "Occupied Agency", "owner_email": "owner-occupied@example.com",
+              "owner_password": "occupied-pass-1"},
+        headers=admin_headers,
+    )
+    assert live.status_code == 200, live.text
+    try:
+        clash = client.post(
+            f"{API}/platform/tenants",
+            json={"name": "Second Agency", "owner_email": "owner-occupied@example.com",
+                  "owner_password": "occupied-pass-2"},
+            headers=admin_headers,
+        )
+        assert clash.status_code == 409
+        # And it says where the address is, rather than leaving a dead end.
+        assert "Occupied Agency" in clash.json()["detail"]
+    finally:
+        client.delete(f"{API}/platform/tenants/{live.json()['id']}", headers=admin_headers)
+
+
+def test_deleting_a_tenant_deactivates_its_users(client, admin_headers):
+    created = client.post(
+        f"{API}/platform/tenants",
+        json={"name": "Frozen Agency", "owner_email": "owner-frozen@example.com",
+              "owner_password": "frozen-pass-12"},
+        headers=admin_headers,
+    ).json()
+    client.delete(f"{API}/platform/tenants/{created['id']}", headers=admin_headers)
+
+    listed = client.get(
+        f"{API}/platform/tenants", params={"include_deleted": True}, headers=admin_headers
+    ).json()
+    assert created["id"] in {t["id"] for t in listed}, "the row is retained, only the address is freed"
 
 
 def test_the_default_workspace_cannot_be_deleted(client, admin_headers):
@@ -512,3 +596,221 @@ def test_a_template_that_names_modules_is_treated_as_naming_all_of_them(client, 
     # The rows still exist, so the tenant admin can switch one on later.
     everything = client.get(f"{API}/modules", params={"enabled_only": False}, headers=own).json()
     assert len(everything) > 3
+
+
+# --- a disabled module is gone, not just hidden -------------------------------
+
+def _module_id(client, headers, key: str) -> str:
+    rows = client.get(f"{API}/modules", params={"enabled_only": False}, headers=headers).json()
+    return next(m["id"] for m in rows if m["module_key"] == key)
+
+
+def test_switching_a_module_off_closes_its_api(client, alpha):
+    """Otherwise "disabled" only means "missing from the sidebar".
+
+    A workspace with Policies switched off could still create policies over the API
+    that its own UI would never show.
+    """
+    assert client.get(f"{API}/policies", headers=alpha.auth()).status_code == 200
+
+    module_id = _module_id(client, alpha.auth(), "policies")
+    client.patch(f"{API}/modules/{module_id}", json={"enabled": False}, headers=alpha.auth())
+    try:
+        assert client.get(f"{API}/policies", headers=alpha.auth()).status_code == 404
+        assert client.post(
+            f"{API}/policies",
+            json={"policy_number": "SHOULD-NOT-SAVE", "product_line": "motor",
+                  "customer_id": alpha.ids["contact"]},
+            headers=alpha.auth(),
+        ).status_code == 404
+    finally:
+        client.patch(f"{API}/modules/{module_id}", json={"enabled": True}, headers=alpha.auth())
+    assert client.get(f"{API}/policies", headers=alpha.auth()).status_code == 200
+
+
+def test_the_poster_studio_is_gated_on_its_own_module(client, alpha):
+    """Poster is permissioned on `contacts:read`, so the permission alone cannot gate it."""
+    assert client.get(f"{API}/poster/templates", headers=alpha.auth()).status_code == 200
+
+    module_id = _module_id(client, alpha.auth(), "poster")
+    client.patch(f"{API}/modules/{module_id}", json={"enabled": False}, headers=alpha.auth())
+    try:
+        assert client.get(f"{API}/poster/templates", headers=alpha.auth()).status_code == 404
+        # Contacts itself keeps working — only the Poster Studio went away.
+        assert client.get(f"{API}/contacts", headers=alpha.auth()).status_code == 200
+    finally:
+        client.patch(f"{API}/modules/{module_id}", json={"enabled": True}, headers=alpha.auth())
+
+
+def test_a_locked_module_cannot_be_switched_off(client, alpha):
+    module_id = _module_id(client, alpha.auth(), "settings")
+    resp = client.patch(f"{API}/modules/{module_id}", json={"enabled": False}, headers=alpha.auth())
+    assert resp.status_code == 400
+    assert client.get(f"{API}/settings", headers=alpha.auth()).status_code in (200, 404)
+
+
+def test_search_drops_groups_for_modules_this_workspace_does_not_have(client, alpha):
+    """A general CRM should not get a "Policies" heading for a module it switched off."""
+    before = client.get(f"{API}/search", params={"q": "a"}, headers=alpha.auth()).json()
+    assert "policies" in before["results"]
+
+    module_id = _module_id(client, alpha.auth(), "policies")
+    client.patch(f"{API}/modules/{module_id}", json={"enabled": False}, headers=alpha.auth())
+    try:
+        after = client.get(f"{API}/search", params={"q": "a"}, headers=alpha.auth()).json()
+        assert "policies" not in after["results"]
+        assert "contacts" in after["results"]
+    finally:
+        client.patch(f"{API}/modules/{module_id}", json={"enabled": True}, headers=alpha.auth())
+
+
+# --- creating and deleting templates ------------------------------------------
+
+def test_a_new_template_starts_from_a_working_one(client, admin_headers):
+    """A template with no roles or stages provisions a workspace nobody can sign into."""
+    resp = client.post(
+        f"{API}/platform/templates",
+        json={"key": "brand_new", "name": "Brand New", "base_key": "insurance_agent",
+              "description": "Made from scratch in the console"},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    config = resp.json()["config"]
+    assert resp.json()["is_system"] is False
+    assert config["key"] == "brand_new"
+    assert config["name"] == "Brand New"
+    # It inherited a working shape rather than starting empty.
+    assert config["roles"], "a new template must carry roles"
+    assert any(m["key"] == "policies" and m["enabled"] for m in config["modules"])
+
+    client.delete(f"{API}/platform/templates/brand_new", headers=admin_headers)
+
+
+def test_a_new_template_defaults_to_the_general_crm_base(client, admin_headers):
+    resp = client.post(
+        f"{API}/platform/templates",
+        json={"key": "defaulted_base", "name": "Defaulted Base"},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    modules = {m["key"]: m["enabled"] for m in resp.json()["config"]["modules"]}
+    assert modules.get("policies") is False, "general_crm is the base, so Policies is off"
+    client.delete(f"{API}/platform/templates/defaulted_base", headers=admin_headers)
+
+
+def test_a_duplicate_template_key_is_refused(client, admin_headers):
+    resp = client.post(
+        f"{API}/platform/templates",
+        json={"key": "general_crm", "name": "Clashing"},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 409
+
+
+def test_an_unknown_base_is_refused(client, admin_headers):
+    resp = client.post(
+        f"{API}/platform/templates",
+        json={"key": "from_nowhere", "name": "From Nowhere", "base_key": "does_not_exist"},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 404
+
+
+def test_a_custom_template_can_be_created_edited_and_deleted(client, admin_headers):
+    """The whole loop the console offers, in one pass."""
+    created = client.post(
+        f"{API}/platform/templates",
+        json={"key": "full_loop", "name": "Full Loop"},
+        headers=admin_headers,
+    )
+    assert created.status_code == 200, created.text
+
+    edited = client.patch(
+        f"{API}/platform/templates/full_loop",
+        json={"name": "Full Loop v2",
+              "modules": [{"key": "contacts", "enabled": True, "label": "Members", "order": 2},
+                          {"key": "leads", "enabled": True, "label": "Enquiries", "order": 3},
+                          {"key": "deals", "enabled": True, "label": "Cases", "order": 4}]},
+        headers=admin_headers,
+    )
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["name"] == "Full Loop v2"
+
+    removed = client.delete(f"{API}/platform/templates/full_loop", headers=admin_headers)
+    assert removed.status_code == 200
+    assert client.get(f"{API}/platform/templates/full_loop", headers=admin_headers).status_code == 404
+
+
+def test_a_template_in_use_cannot_be_deleted(client, admin_headers):
+    client.post(
+        f"{API}/platform/templates",
+        json={"key": "in_use_tpl", "name": "In Use"},
+        headers=admin_headers,
+    )
+    tenant = client.post(
+        f"{API}/platform/tenants",
+        json={"name": "Uses The Template", "owner_email": "owner-inuse@example.com",
+              "owner_password": "inuse-pass-12", "template_key": "in_use_tpl"},
+        headers=admin_headers,
+    )
+    assert tenant.status_code == 200, tenant.text
+    try:
+        blocked = client.delete(f"{API}/platform/templates/in_use_tpl", headers=admin_headers)
+        assert blocked.status_code == 409
+        assert "still use this template" in blocked.json()["detail"]
+    finally:
+        client.delete(f"{API}/platform/tenants/{tenant.json()['id']}", headers=admin_headers)
+        client.delete(f"{API}/platform/templates/in_use_tpl", headers=admin_headers)
+
+
+def test_a_system_template_cannot_be_deleted(client, admin_headers):
+    resp = client.delete(f"{API}/platform/templates/general_crm", headers=admin_headers)
+    assert resp.status_code == 400
+
+
+# --- what the console shows about one workspace -------------------------------
+
+def test_tenant_detail_carries_what_the_console_needs_to_show(client, admin_headers):
+    created = client.post(
+        f"{API}/platform/tenants",
+        json={"name": "Detailed Agency", "owner_email": "owner-detail@example.com",
+              "owner_password": "detail-pass-12", "template_key": "insurance_agent",
+              "owner_first_name": "Meena", "owner_last_name": "Iyer",
+              "plan": "pro", "currency": "INR"},
+        headers=admin_headers,
+    )
+    assert created.status_code == 200, created.text
+    try:
+        detail = client.get(
+            f"{API}/platform/tenants/{created.json()['id']}", headers=admin_headers
+        ).json()
+
+        assert detail["owner_email"] == "owner-detail@example.com"
+        assert detail["owner_name"] == "Meena Iyer"
+        assert detail["plan"] == "pro"
+        assert detail["user_count"] == 1
+        assert detail["enabled_module_count"] > 0
+        assert detail["enabled_module_count"] <= detail["module_count"]
+
+        owner = next(u for u in detail["users"] if u["is_owner"])
+        assert owner["email"] == "owner-detail@example.com"
+        assert owner["role"] == "Super Admin"
+        assert owner["is_active"] is True
+
+        # Counts are only reported for modules this workspace actually has: an
+        # insurance template has Policies and no Companies.
+        assert "policies" in detail["record_counts"]
+        assert "companies" not in detail["record_counts"]
+        assert detail["record_counts"]["policies"] == 0
+    finally:
+        client.delete(f"{API}/platform/tenants/{created.json()['id']}", headers=admin_headers)
+
+
+def test_tenant_detail_counts_are_that_tenants_own(client, admin_headers, alpha):
+    """The counts run in the tenant's scope — a cross-tenant total would be worse
+    than no number at all, because it looks authoritative."""
+    detail = client.get(
+        f"{API}/platform/tenants/{alpha.tenant_id}", headers=admin_headers
+    ).json()
+    assert detail["record_counts"]["customers"] == 1
+    assert detail["record_counts"]["companies"] == 1

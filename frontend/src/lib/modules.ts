@@ -25,3 +25,15 @@ export function moduleIcon(name: string): Icons.LucideIcon {
   const icon = (Icons as unknown as Record<string, Icons.LucideIcon>)[name];
   return icon ?? Icons.Circle;
 }
+
+/**
+ * Whether this workspace has a module switched on.
+ *
+ * The API refuses a disabled module outright, so an action button gated only on a
+ * permission can offer something that will come back 404 — "Convert to invoice" on
+ * a workspace with no Invoices. Gate on both.
+ */
+export function useHasModule() {
+  const { data } = useModules();
+  return (key: string) => (data ?? []).some((m) => m.module_key === key);
+}

@@ -45,7 +45,8 @@ cd backend && .venv/Scripts/python.exe -m pytest          # all
 ```
 
 `backend/tests/` holds the tenant-isolation (Phase 0), template/provisioning (Phase 1)
-custom-field (Phase 2), customer-PII (Phase 3), policy (Phase 4) and poster/WhatsApp (Phase 5) suites — 221 tests. Install
+custom-field (Phase 2), customer-PII (Phase 3), policy (Phase 4), poster/WhatsApp (Phase 5) and
+loans/reports/insurance-quotation (Phase 6) suites — 272 tests. Install
 test deps with `pip install -r requirements-dev.txt`. There is no frontend test suite;
 `npm run build` (which runs `tsc -b`) is the only typecheck gate.
 
@@ -106,10 +107,41 @@ Every business row belongs to a tenant, and isolation is enforced **centrally** 
   documents carry `tenant_id` as a filterable attribute and every query filters on it; Socket.IO
   rooms are `tenant:<tid>:user:<uid>`; Celery beat jobs walk tenants via `for_each_tenant`.
 - Platform Super Admins are the one user kind with `tenant_id` and `role_id` null. They use
-  `/api/v1/platform/*` and reach tenant data only by impersonating (audited, ≤60 min).
+  `/api/v1/platform/*` and **cannot reach tenant data at all** — see below.
 
 Anything added to `app/*/models.py` almost certainly needs `TenantScoped`, and any new
 global unique constraint needs to be composite with `tenant_id` instead.
+
+### A platform admin has no way into a workspace
+
+Impersonation was removed. There is no endpoint that mints a token for someone else's
+tenant, `_create_token` cannot even express one, and `get_current_user` refuses any
+token whose `tid` is not the user's own — no exceptions. Do not reintroduce a
+"support session": the console manages a workspace from the outside, and everything
+an admin needs (modules, template, status, owner, record counts) is on the tenant page.
+
+Consequently a platform admin hitting a tenant endpoint must get a **refusal, not a
+crash**. `require_perm` refuses them outright; for endpoints guarded only by
+`get_current_user`, the tenant-scoped query raises `TenantContextMissing`, which has
+its own handler rendering 403. A 500 there would read as a broken server when the
+system is behaving exactly as designed.
+
+### A disabled module is gone, not hidden
+
+Switching a module off has to mean something at the API, or a workspace with Policies
+disabled can still create policies over HTTP that its own UI will never show.
+
+- `require_perm("policies:read")` refuses when the permission's prefix names a catalog
+  module this tenant has switched off. Only prefixes that *are* catalog keys are gated —
+  `users:read` and `activities:read` are cross-cutting and have no module to switch off.
+- `require_module("poster")` is for the case the prefix cannot cover: the Poster Studio is
+  permissioned on `contacts:read`, so its permission names the wrong module. Reach for it
+  whenever an endpoint's permission does not name its own module.
+- `/search` filters result groups the same way, so a general CRM gets no "Policies" heading
+  for a module it does not have.
+- `backfill_new_modules()` runs at startup and gives existing tenants a row for any module
+  added to the catalog since they were provisioned — additive only, decided by that tenant's
+  own template. Without it, shipping a module reaches only workspaces created afterwards.
 
 ### Templates — how a tenant gets its shape
 
@@ -234,6 +266,41 @@ schema fields are `None`-defaulted rather than `0` — otherwise "not supplied" 
 at them; deleting one that is in use deactivates it so historical policies keep the
 insurer they were actually written with.
 
+### Quotations come in two shapes
+
+`Quotation.kind` is `"standard"` or `"insurance"`, and the difference is arithmetic:
+
+- A **standard** quotation's items are things bought together, so the total is their sum —
+  `billing.compute_items` as before, unchanged.
+- An **insurance** quotation's options are *competing quotes for the same cover*, so the
+  total is the **selected option** and never the sum. Three insurers at ₹12k, ₹14k and
+  ₹16.5k is a ₹12k–₹16.5k decision, not a ₹42.5k sale. This is why the options live in an
+  `insurance` JSON column rather than in `quotation_items`: the billing engine's whole job
+  is to add items up, and these must not be added up.
+
+`normalise_options()` settles the selection — one and only one, defaulting to the
+recommendation and then to the cheapest — and runs premiums through the same
+`compute_premium()` a policy does, so an option and the policy it becomes cannot disagree
+about the gross. Option keys are whitelisted by `OPTION_FIELDS`, same reasoning as
+`LINE_FIELDS` on a policy.
+
+`comparison_pdf.py` is a *separate renderer*, not a mode of `document_pdf`: one prints line
+items down a portrait page and totals them, the other puts insurers across a landscape page
+and totals nothing.
+
+`POST /quotations/{id}/convert-to-policy` books the selected option; `convert` (to an
+invoice) refuses an insurance quotation and says why. Both check the policy number is free
+first — a duplicate would otherwise surface as a 500 on a typo.
+
+### Loans
+
+Deliberately thinner than a policy: the lender does the underwriting, so what an agency
+tracks is whose case it is, how far it has got, and what it earns. `expected_payout` is
+derived from the **sanctioned** amount (never the requested one) and recomputed whenever
+either input moves, so a payout report cannot quietly go stale. Stage changes stamp
+`sanctioned_on` / `disbursed_on` — on create as well as on update, because agencies enter
+existing cases at the stage they have already reached.
+
 ### Personal data — encryption, masking, reveal
 
 `app/services/crypto.py` does envelope encryption: a platform master key
@@ -288,6 +355,14 @@ migrations that change one need batch mode — and because SQLite renders `uniqu
 *unnamed* constraint that batch mode cannot drop, `0002_multitenant` reflects the table, discards the
 constraint from the reflected definition, and passes it as `copy_from`. Reuse that pattern.
 
+**Deleting a tenant releases its email addresses.** `users.email` is globally unique —
+that is what lets the sign-in screen work without a workspace picker — so a soft-deleted
+tenant would otherwise hold its owner's address for the whole retention window, and
+re-creating that client under the same address would be refused. `release_tenant_users()`
+deactivates the users and tombstones their addresses (`deleted.<tid8>.<original>`), which
+keeps the row for the retention window and the original address readable inside the
+tombstone. `original_email()` reverses it.
+
 `app/database/seed.py` seeds **one tenant** (`seed.run(db, tenant_id)`) and is idempotent: roles,
 pipeline stages, lead sources, email templates, settings keys. It deliberately upgrades only
 *unmodified* default email templates (compared against the `*_V1` constants) so user edits survive.
@@ -298,7 +373,7 @@ It must never create a user — `users.email` is globally unique, so the owner i
 ### Permissions
 
 Platform admins bypass tenant RBAC entirely (guarded by `get_platform_admin`) and are refused by
-`require_perm` unless impersonating. Otherwise permissions are `"<module>:<action>"` strings (`app/core/permissions.py`; actions are
+`require_perm`. Otherwise permissions are `"<module>:<action>"` strings (`app/core/permissions.py`; actions are
 read/write/delete). A role's `permissions` column is a JSON list; `"*"` and `"<module>:*"` are
 wildcards. Routes gate with `Depends(require_perm("leads:write"))` — either inside the decorator's
 `dependencies=[...]` (read-only routes) or as the `user:` parameter when the handler needs the
@@ -383,6 +458,8 @@ Supporting conventions:
 
 Backend: `models.py` → import it in `models_registry.py` → `schemas.py` → `router.py` →
 `include_router` in `main.py` → add the module name to `MODULES` in `core/permissions.py` (and to
-the relevant `DEFAULT_ROLES` grants) → optionally register `FILTERS[...]` and an `IOSpec`.
-Frontend: a page under `src/pages/` built on `CrudPage`, a route in `App.tsx`, a `NAV` entry with
-its `perm` in `layouts/AppLayout.tsx`, and types in `src/types/index.ts`.
+the relevant `DEFAULT_ROLES` grants) → add a `ModuleDef` to `platform/catalog.py` → name it in the
+templates that should have it (and bump their `version`) → optionally register `FILTERS[...]` and
+an `IOSpec`. Existing tenants pick the module up at next startup via `backfill_new_modules()`.
+Frontend: a page under `src/pages/`, a route in `App.tsx`, and types in `src/types/index.ts` — the
+sidebar entry comes from the catalog, not from a list in the frontend.

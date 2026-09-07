@@ -22,9 +22,24 @@ class PermissionDeniedError(AppError):
 
 
 def register_exception_handlers(app: FastAPI) -> None:
+    from app.core.tenancy import TenantContextMissing
+
     @app.exception_handler(AppError)
     async def app_error_handler(request: Request, exc: AppError):
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+    @app.exception_handler(TenantContextMissing)
+    async def missing_tenant_handler(request: Request, exc: TenantContextMissing):
+        """A tenant-scoped query with no tenant in context is a refusal, not a crash.
+
+        It reaches here when a platform admin hits an endpoint that reads tenant data:
+        they have no workspace, so the query correctly refuses to run rather than
+        returning everyone's rows. Answering 500 hid that behind "something broke".
+        """
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "This endpoint needs a workspace. Platform administrators have none."},
+        )
 
     @app.exception_handler(Exception)
     async def unhandled_error_handler(request: Request, exc: Exception):

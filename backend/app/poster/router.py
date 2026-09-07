@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.activities.service import audit, log_activity
 from app.contacts.models import Contact
 from app.core.crud import apply_updates, get_or_404
-from app.core.deps import get_current_user, require_perm
+from app.core.deps import get_current_user, require_module, require_perm
 from app.core.exceptions import AppError
 from app.core.schemas import Message, ORMModel
 from app.database.session import get_db
@@ -19,7 +19,7 @@ from app.poster.presets import MERGE_FIELDS
 from app.services import storage, whatsapp
 from app.users.models import User
 
-router = APIRouter(tags=["poster"])
+router = APIRouter(tags=["poster"], dependencies=[Depends(require_module("poster"))])
 
 
 # --- schemas ------------------------------------------------------------------

@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { ChevronLeft, ExternalLink, LogOut, Menu, Moon, ShieldCheck, Sun, X } from "lucide-react";
+import { ChevronLeft, ExternalLink, LogOut, Menu, Moon, Sun, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 
@@ -21,7 +21,7 @@ import { useVahanPortal } from "@/lib/settings";
  * keys stay stable; only the label and visibility vary.
  */
 export function AppLayout() {
-  const { user, logout, hasPerm, impersonating, impersonatedTenant, exitImpersonation } = useAuth();
+  const { user, logout, hasPerm } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -94,23 +94,6 @@ export function AppLayout() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
-      {/* Support session: make it impossible to forget whose data you are looking at. */}
-      {impersonating && (
-        <div className="flex shrink-0 items-center justify-center gap-3 bg-amber-500 px-4 py-1.5 text-sm font-medium text-amber-950">
-          <ShieldCheck size={15} />
-          <span>
-            Viewing <strong>{impersonatedTenant}</strong> as a support session. Actions are recorded
-            against your platform account.
-          </span>
-          <button
-            onClick={exitImpersonation}
-            className="ml-2 inline-flex items-center gap-1 rounded-md bg-amber-950/10 px-2 py-0.5 text-xs font-semibold transition-colors hover:bg-amber-950/20"
-          >
-            <X size={12} /> Exit
-          </button>
-        </div>
-      )}
-
       <div className="flex min-h-0 flex-1 overflow-hidden">
       {/* Desktop sidebar */}
       <div className="hidden lg:block">{sidebar}</div>

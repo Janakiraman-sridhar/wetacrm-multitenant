@@ -1,16 +1,46 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { ArrowLeft, GripVertical, LogIn, Lock, Pause, Play, Save, Trash2 } from "lucide-react";
+import {
+  ArrowLeft, GripVertical, Lock, Pause, Pencil, Play, Save, Trash2,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { ConfirmDialog, Modal } from "@/components/Modal";
 import { useToast } from "@/context/ToastContext";
 import { api, errorMessage } from "@/lib/api";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatDateTime } from "@/lib/format";
 import { moduleIcon } from "@/lib/modules";
-import { useOpenWorkspace } from "@/platform/useImpersonation";
 import type { CrmTemplate, TenantDetail as TenantDetailType, TenantModule } from "@/types";
+
+/** Labels for the per-module row counts the API reports. */
+const COUNT_LABELS: Record<string, string> = {
+  customers: "Customers",
+  companies: "Companies",
+  policies: "Policies",
+  loans: "Loans",
+  quotations: "Quotations",
+  deals: "Deals",
+  leads: "Leads",
+  tasks: "Tasks",
+};
+
+const STATUS_STYLES: Record<string, string> = {
+  active: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+  suspended: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  provisioning: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+};
+
+function Field({ label, value, title }: { label: string; value: React.ReactNode; title?: string }) {
+  return (
+    <div>
+      <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</dt>
+      <dd className="mt-0.5 truncate text-sm font-medium" title={title}>
+        {value ?? "—"}
+      </dd>
+    </div>
+  );
+}
 
 export default function TenantDetail() {
   const { tenantId = "" } = useParams();
@@ -22,6 +52,8 @@ export default function TenantDetail() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   // Typing the name is the guard: a delete is not something to reach by mis-click.
   const [confirmName, setConfirmName] = useState("");
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({ name: "", plan: "", timezone: "", currency: "" });
 
   const tenant = useQuery({
     queryKey: ["platform", "tenant", tenantId],
@@ -55,7 +87,17 @@ export default function TenantDetail() {
       ).data,
     onSuccess: () => {
       toast("Modules updated");
-      queryClient.invalidateQueries({ queryKey: ["platform", "tenant", tenantId, "modules"] });
+      queryClient.invalidateQueries({ queryKey: ["platform", "tenant", tenantId] });
+    },
+    onError: (err) => toast(errorMessage(err), "error"),
+  });
+
+  const saveDetails = useMutation({
+    mutationFn: async () => (await api.patch(`/platform/tenants/${tenantId}`, editForm)).data,
+    onSuccess: () => {
+      toast("Workspace updated");
+      setEditOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["platform"] });
     },
     onError: (err) => toast(errorMessage(err), "error"),
   });
@@ -70,8 +112,6 @@ export default function TenantDetail() {
     },
     onError: (err) => toast(errorMessage(err), "error"),
   });
-
-  const openWorkspace = useOpenWorkspace();
 
   const removeTenant = useMutation({
     mutationFn: async () => (await api.delete(`/platform/tenants/${tenantId}`)).data,
@@ -89,9 +129,15 @@ export default function TenantDetail() {
   const t = tenant.data;
   const templateName = templates.data?.find((x) => x.key === t.template_key)?.name ?? t.template_key;
   const enabledCount = draft.filter((m) => m.enabled).length;
+  const counts = Object.entries(t.record_counts ?? {});
 
   const patchDraft = (key: string, patch: Partial<TenantModule>) =>
     setDraft((rows) => rows.map((m) => (m.module_key === key ? { ...m, ...patch } : m)));
+
+  const openEdit = () => {
+    setEditForm({ name: t.name, plan: t.plan, timezone: t.timezone, currency: t.currency });
+    setEditOpen(true);
+  };
 
   return (
     <div className="mx-auto max-w-4xl space-y-5">
@@ -101,23 +147,19 @@ export default function TenantDetail() {
         </Link>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold">{t.name}</h1>
+            <h1 className="flex items-center gap-2 text-xl font-semibold">
+              {t.name}
+              <span className={clsx("badge", STATUS_STYLES[t.status] ?? STATUS_STYLES.provisioning)}>
+                {t.status}
+              </span>
+            </h1>
             <p className="text-sm text-slate-500 dark:text-slate-400">
-              /{t.slug} · {templateName} · {t.user_count} user{t.user_count === 1 ? "" : "s"} · created {formatDate(t.created_at)}
+              /{t.slug} · {templateName} · created {formatDate(t.created_at)}
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              className="btn-primary"
-              disabled={openWorkspace.isPending || t.status === "suspended"}
-              onClick={() => openWorkspace.mutate(tenantId)}
-              title={
-                t.status === "suspended"
-                  ? "Reactivate this workspace before opening it"
-                  : "Sign in to this workspace as one of its users. Time-limited and audited."
-              }
-            >
-              <LogIn size={15} /> {openWorkspace.isPending ? "Opening…" : "Open workspace"}
+            <button className="btn-secondary" onClick={openEdit}>
+              <Pencil size={15} /> Edit
             </button>
             {t.status === "suspended" ? (
               <button className="btn-primary" onClick={() => setStatus.mutate("reactivate")}>
@@ -137,6 +179,99 @@ export default function TenantDetail() {
           This workspace is suspended. Its users cannot sign in; the data is retained.
         </div>
       )}
+
+      <section className="card p-5">
+        <h2 className="mb-4 font-semibold">Workspace</h2>
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-4">
+          <Field label="Owner" value={t.owner_name} title={t.owner_email ?? undefined} />
+          <Field
+            label="Owner email"
+            value={
+              t.owner_email ? (
+                <a className="text-primary-600 hover:underline dark:text-primary-400" href={`mailto:${t.owner_email}`}>
+                  {t.owner_email}
+                </a>
+              ) : null
+            }
+            title={t.owner_email ?? undefined}
+          />
+          <Field label="Plan" value={t.plan} />
+          <Field label="Type" value={t.type} />
+          <Field label="Template" value={templateName} title={t.template_key} />
+          <Field label="Timezone" value={t.timezone} />
+          <Field label="Currency" value={t.currency} />
+          <Field label="Modules" value={`${t.enabled_module_count} of ${t.module_count} on`} />
+        </dl>
+
+        {counts.length > 0 && (
+          <>
+            <h3 className="mb-3 mt-6 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+              What is in this workspace
+            </h3>
+            <dl className="grid grid-cols-3 gap-3 sm:grid-cols-5">
+              {counts.map(([key, value]) => (
+                <div key={key} className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800/60">
+                  <dt className="text-[11px] font-medium text-slate-400">{COUNT_LABELS[key] ?? key}</dt>
+                  <dd className="text-lg font-bold tabular-nums">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </>
+        )}
+      </section>
+
+      <section className="card p-5">
+        <div className="mb-3 flex items-baseline justify-between">
+          <h2 className="font-semibold">Users</h2>
+          <span className="text-sm text-slate-400">
+            {t.user_count} user{t.user_count === 1 ? "" : "s"}
+          </span>
+        </div>
+        <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
+          Sign-ins that belong to this workspace. The console cannot open their CRM — to
+          look at their data, ask them to share it, or add yourself as one of their users
+          from inside the workspace.
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-400 dark:border-slate-800">
+                <th className="px-2 py-2 font-semibold">Name</th>
+                <th className="px-2 py-2 font-semibold">Email</th>
+                <th className="px-2 py-2 font-semibold">Role</th>
+                <th className="px-2 py-2 font-semibold">Last sign-in</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(t.users ?? []).map((u) => (
+                <tr key={u.id} className="border-b border-slate-100 dark:border-slate-800/60">
+                  <td className="px-2 py-2">
+                    {u.full_name || "—"}
+                    {u.is_owner && (
+                      <span className="badge ml-2 bg-primary-50 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
+                        owner
+                      </span>
+                    )}
+                    {!u.is_active && <span className="badge ml-2">inactive</span>}
+                  </td>
+                  <td className="px-2 py-2 text-slate-500 dark:text-slate-400">{u.email}</td>
+                  <td className="px-2 py-2">{u.role ?? "—"}</td>
+                  <td className="px-2 py-2 text-slate-500 dark:text-slate-400">
+                    {u.last_login_at ? formatDateTime(u.last_login_at) : "never"}
+                  </td>
+                </tr>
+              ))}
+              {(t.users ?? []).length === 0 && (
+                <tr>
+                  <td colSpan={4} className="py-6 text-center text-sm text-slate-400">
+                    No users yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <section className="card p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
@@ -204,7 +339,9 @@ export default function TenantDetail() {
           contacting support within that window — but not from here.
         </p>
         <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-          Suspending is usually what you want: it blocks sign-in and keeps everything intact.
+          Their email addresses are released straight away, so the same client can be added
+          back under the same address. Suspending is usually what you want instead: it blocks
+          sign-in and keeps everything intact.
         </p>
         <button
           className="btn-danger mt-3"
@@ -217,6 +354,62 @@ export default function TenantDetail() {
           <Trash2 size={15} /> Delete {t.name}
         </button>
       </section>
+
+      <Modal open={editOpen} onClose={() => setEditOpen(false)} title={`Edit ${t.name}`}>
+        <div className="space-y-4">
+          <div>
+            <label className="label">Workspace name</label>
+            <input
+              className="input"
+              value={editForm.name}
+              onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+              autoFocus
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div>
+              <label className="label">Plan</label>
+              <input
+                className="input"
+                value={editForm.plan}
+                onChange={(e) => setEditForm((f) => ({ ...f, plan: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="label">Timezone</label>
+              <input
+                className="input"
+                value={editForm.timezone}
+                onChange={(e) => setEditForm((f) => ({ ...f, timezone: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="label">Currency</label>
+              <input
+                className="input"
+                value={editForm.currency}
+                onChange={(e) => setEditForm((f) => ({ ...f, currency: e.target.value }))}
+              />
+            </div>
+          </div>
+          <p className="text-xs text-slate-400">
+            The slug and template are fixed once a workspace exists — both are baked into
+            the data it already holds.
+          </p>
+          <div className="flex justify-end gap-2">
+            <button className="btn-secondary" onClick={() => setEditOpen(false)}>
+              Cancel
+            </button>
+            <button
+              className="btn-primary"
+              disabled={editForm.name.trim().length < 2 || saveDetails.isPending}
+              onClick={() => saveDetails.mutate()}
+            >
+              {saveDetails.isPending ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal open={confirmDelete} onClose={() => setConfirmDelete(false)} title={`Delete ${t.name}?`}>
         <div className="space-y-4">

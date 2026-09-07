@@ -10,6 +10,7 @@ from app.deals import models as deals_models  # noqa: F401
 from app.documents import models as documents_models  # noqa: F401
 from app.invoices import models as invoices_models  # noqa: F401
 from app.leads import models as leads_models  # noqa: F401
+from app.loans import models as loans_models  # noqa: F401
 from app.meetings import models as meetings_models  # noqa: F401
 from app.notifications import models as notifications_models  # noqa: F401
 from app.platform import fields as platform_fields  # noqa: F401

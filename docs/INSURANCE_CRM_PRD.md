@@ -58,7 +58,7 @@ acknowledgement. Please confirm you want it available at all.
 
 | Persona | Scope | Typical needs |
 |---|---|---|
-| **Platform Super Admin** (you) | All tenants | Create/suspend clients, choose template, customise their fields, impersonate for support, see platform health |
+| **Platform Super Admin** (you) | Tenant *configuration* only, never tenant data | Create/suspend/delete clients, choose and edit templates, customise their fields and modules, see platform health |
 | **Tenant Admin** (agency owner) | One tenant | Manage own users/roles, branding, own custom fields, insurers/products masters, see whole book |
 | **Agent / Sales Executive** | Own + assigned records | Daily work: customers, policies, renewals, quotes, tasks, WhatsApp outreach |
 | **Ops / Back office** | Tenant-wide | Policy data entry, document collection, renewal chasing, reconciliation |
@@ -123,7 +123,7 @@ later schema work goes through Alembic. `ensure_schema.py` is retired.
 - `users.tenant_id` is nullable; `NULL` + `is_platform_admin = true` identifies a platform Super Admin.
 - JWT gains a `tid` claim. `get_current_user` sets the tenant context from it.
 - Platform admins authenticate into the **platform console** (`/platform`), a different shell from the tenant app.
-- **Impersonation:** a platform admin can open a tenant as a named tenant user. This mints a short-lived token carrying both `tid` and an `imp` (impersonator) claim, is capped at 60 minutes, shows a persistent banner in the UI, and writes an audit row on start and end. Every action taken while impersonating is audited against the real platform admin, not the impersonated user.
+- **No impersonation.** A platform admin cannot open a client's workspace. This was built and then deliberately removed: a support session that can read every customer's PAN and Aadhaar is a standing breach waiting for one compromised admin account, and the audit trail only tells you afterwards. The console manages a workspace from the outside — modules, template, status, owner and record counts — which covers what support actually needs. Where a person genuinely must see a client's data, the client adds them as a user of their own workspace, which is visible to the client and revocable by them.
 
 ### 4.5 Infrastructure scoping
 

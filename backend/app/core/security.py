@@ -23,7 +23,6 @@ def _create_token(
     token_type: str,
     expires_delta: timedelta,
     tenant_id: str | None = None,
-    impersonator_id: str | None = None,
 ) -> str:
     now = datetime.now(timezone.utc)
     payload = {
@@ -35,20 +34,12 @@ def _create_token(
     }
     if tenant_id:
         payload["tid"] = tenant_id
-    if impersonator_id:
-        payload["imp"] = impersonator_id
     return jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
 
 
-def create_access_token(
-    user_id: str, tenant_id: str | None = None, impersonator_id: str | None = None
-) -> str:
+def create_access_token(user_id: str, tenant_id: str | None = None) -> str:
     return _create_token(
-        user_id,
-        "access",
-        timedelta(minutes=settings.access_token_expire_minutes),
-        tenant_id,
-        impersonator_id,
+        user_id, "access", timedelta(minutes=settings.access_token_expire_minutes), tenant_id
     )
 
 
@@ -57,20 +48,6 @@ def create_refresh_token(user_id: str, tenant_id: str | None = None) -> str:
         user_id, "refresh", timedelta(days=settings.refresh_token_expire_days), tenant_id
     )
 
-
-def create_impersonation_token(user_id: str, tenant_id: str, impersonator_id: str) -> str:
-    """Short-lived token letting a platform admin act as a tenant user.
-
-    Capped well below a normal session so an unattended support session expires
-    on its own. The `imp` claim keeps the real actor attributable in audit logs.
-    """
-    return _create_token(
-        user_id,
-        "access",
-        timedelta(minutes=settings.impersonation_token_expire_minutes),
-        tenant_id,
-        impersonator_id,
-    )
 
 
 def decode_token(token: str, expected_type: str) -> dict | None:

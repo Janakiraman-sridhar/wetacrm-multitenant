@@ -21,6 +21,9 @@ class ItemOut(ItemIn):
 
 
 class QuotationCreate(ORMModel):
+    kind: str = "standard"
+    #: Insurance quotations only: the risk plus the competing insurer options.
+    insurance: dict = {}
     company_id: str | None = None
     contact_id: str | None = None
     deal_id: str | None = None
@@ -34,6 +37,8 @@ class QuotationCreate(ORMModel):
 
 
 class QuotationUpdate(ORMModel):
+    kind: str | None = None
+    insurance: dict | None = None
     company_id: str | None = None
     contact_id: str | None = None
     deal_id: str | None = None
@@ -51,6 +56,9 @@ class QuotationOut(ORMModel):
     id: str
     number: str
     status: str
+    kind: str = "standard"
+    insurance: dict = {}
+    policy_id: str | None = None
     company_id: str | None = None
     contact_id: str | None = None
     deal_id: str | None = None
@@ -73,3 +81,17 @@ class QuotationOut(ORMModel):
 class SendQuotationIn(ORMModel):
     to_email: str | None = None  # defaults to the contact's first email
     message: str | None = None
+
+
+class ConvertToPolicyIn(ORMModel):
+    """Turn the selected option into a policy.
+
+    The policy number comes from the insurer, not from us, so it must be supplied —
+    a placeholder would sit in the book looking like a real one.
+    """
+
+    policy_number: str = Field(min_length=1, max_length=80)
+    issue_date: date | None = None
+    start_date: date | None = None
+    expiry_date: date | None = None
+    payment_mode: str | None = None

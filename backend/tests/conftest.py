@@ -40,7 +40,7 @@ from app.main import app  # noqa: E402
 from app.meetings.models import CalendarEvent, Meeting  # noqa: E402
 from app.notifications.models import Notification  # noqa: E402
 from app.platform import provisioning  # noqa: E402
-from app.platform.models import Tenant  # noqa: E402
+from app.platform.models import Tenant, TenantModule  # noqa: E402
 from app.products.models import Product  # noqa: E402
 from app.projects.models import Project  # noqa: E402
 from app.quotations.models import Quotation  # noqa: E402
@@ -87,6 +87,13 @@ def _build_tenant(db, key: str) -> TenantWorld:
         # Build the workspace the way provisioning really does, so fixtures exercise
         # the template path rather than a hand-rolled approximation of it.
         provisioning.apply_template(db, tenant.id, provisioning.get_template(db, "general_crm"))
+        db.flush()
+
+        # These worlds are meant to hold data of *every* kind, and a module a tenant
+        # has switched off is now refused at the API, not merely hidden — so switch
+        # them all on here. A test that wants a module off turns that one off itself.
+        for row in db.scalars(select(TenantModule)).all():
+            row.enabled = True
         db.flush()
 
         role = db.scalar(select(Role).where(Role.name == "Super Admin"))
@@ -168,6 +175,20 @@ def worlds(client) -> dict[str, TenantWorld]:
         assert resp.status_code == 200, resp.text
         world.token = resp.json()["access_token"]
     return built
+
+
+@pytest.fixture(autouse=True)
+def _clear_rate_limits():
+    """The login limiter is in-memory and keyed by IP, and every test shares one IP.
+
+    Without this the budget accumulates across the whole session, so adding a test
+    that signs in makes some *later, unrelated* test start returning 429 — a failure
+    that points at entirely the wrong code.
+    """
+    from app.core.rate_limit import _hits
+
+    _hits.clear()
+    yield
 
 
 @pytest.fixture()

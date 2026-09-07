@@ -1,7 +1,7 @@
 {
   "key": "insurance_agent",
   "name": "Insurance Agent",
-  "version": 3,
+  "version": 4,
   "description": "For an insurance agent or agency: customers instead of contacts, an enquiry-to-policy pipeline, insurer and bank masters, and renewal-focused reporting. Policies, Poster Studio and Loans arrive in later phases.",
   "modules": [
     {
@@ -20,55 +20,55 @@
       "key": "leads",
       "enabled": true,
       "label": "Enquiries",
-      "order": 5
+      "order": 6
     },
     {
       "key": "deals",
       "enabled": true,
       "label": "Opportunities",
-      "order": 6
+      "order": 7
     },
     {
       "key": "pipeline",
       "enabled": true,
       "label": "Pipeline",
-      "order": 7
+      "order": 8
     },
     {
       "key": "calendar",
       "enabled": true,
       "label": "Calendar",
-      "order": 8
+      "order": 9
     },
     {
       "key": "tasks",
       "enabled": true,
       "label": "Tasks",
-      "order": 9
+      "order": 10
     },
     {
       "key": "quotations",
       "enabled": true,
       "label": "Quotations",
-      "order": 10
+      "order": 11
     },
     {
       "key": "products",
       "enabled": true,
       "label": "Plans",
-      "order": 11
+      "order": 12
     },
     {
       "key": "reports",
       "enabled": true,
       "label": "Reports",
-      "order": 12
+      "order": 13
     },
     {
       "key": "settings",
       "enabled": true,
       "label": "Settings",
-      "order": 13
+      "order": 14
     },
     {
       "key": "companies",
@@ -105,6 +105,12 @@
       "enabled": true,
       "label": "Poster Studio",
       "order": 4
+    },
+    {
+      "key": "loans",
+      "enabled": true,
+      "label": "Loans",
+      "order": 5
     }
   ],
   "roles": [
@@ -143,6 +149,9 @@
         "leads:delete",
         "leads:read",
         "leads:write",
+        "loans:delete",
+        "loans:read",
+        "loans:write",
         "policies:delete",
         "policies:read",
         "policies:write",
@@ -193,6 +202,8 @@
         "documents:write",
         "leads:read",
         "leads:write",
+        "loans:read",
+        "loans:write",
         "policies:read",
         "policies:write",
         "products:read",
@@ -231,6 +242,9 @@
         "leads:delete",
         "leads:read",
         "leads:write",
+        "loans:delete",
+        "loans:read",
+        "loans:write",
         "policies:delete",
         "policies:read",
         "policies:write",
@@ -263,6 +277,7 @@
         "documents:read",
         "documents:write",
         "leads:read",
+        "loans:read",
         "policies:read",
         "policies:write",
         "products:read",
@@ -282,6 +297,7 @@
         "invoices:delete",
         "invoices:read",
         "invoices:write",
+        "loans:read",
         "policies:read",
         "products:delete",
         "products:read",
@@ -306,6 +322,7 @@
         "documents:read",
         "invoices:read",
         "leads:read",
+        "loans:read",
         "policies:read",
         "products:read",
         "projects:read",

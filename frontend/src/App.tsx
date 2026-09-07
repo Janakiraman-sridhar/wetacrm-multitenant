@@ -11,6 +11,7 @@ import Deals from "@/pages/Deals";
 import ForgotPassword from "@/pages/ForgotPassword";
 import Invoices from "@/pages/Invoices";
 import Leads from "@/pages/Leads";
+import Loans from "@/pages/Loans";
 import Login from "@/pages/Login";
 import ResetPassword from "@/pages/ResetPassword";
 import Pipeline from "@/pages/Pipeline";
@@ -37,8 +38,8 @@ function Protected({ children }: { children: React.ReactNode }) {
 
 /**
  * The Super Admin console. A platform admin has no tenant of their own, so the CRM
- * routes would have nothing to show them — they are sent here instead, and reach a
- * client's data only by impersonating from a tenant page.
+ * routes have nothing to show them — they are sent here instead. There is no way in
+ * to a client's workspace: the console manages a tenant from the outside.
  */
 function PlatformOnly({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -48,12 +49,12 @@ function PlatformOnly({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-/** Keeps a platform admin out of the tenant CRM unless they are impersonating. */
+/** Keeps a platform admin out of the tenant CRM. The API refuses them too. */
 function TenantOnly({ children }: { children: React.ReactNode }) {
-  const { user, loading, impersonating } = useAuth();
+  const { user, loading } = useAuth();
   if (loading) return <PageSpinner />;
   if (!user) return <Navigate to="/login" replace />;
-  if (user.is_platform_admin && !impersonating) return <Navigate to="/platform" replace />;
+  if (user.is_platform_admin) return <Navigate to="/platform" replace />;
   return <>{children}</>;
 }
 
@@ -94,6 +95,7 @@ export default function App() {
         <Route path="deals" element={<Deals />} />
         <Route path="policies" element={<Policies />} />
         <Route path="poster" element={<PosterStudio />} />
+        <Route path="loans" element={<Loans />} />
         <Route path="pipeline" element={<Pipeline />} />
         <Route path="calendar" element={<CalendarPage />} />
         <Route path="tasks" element={<Tasks />} />

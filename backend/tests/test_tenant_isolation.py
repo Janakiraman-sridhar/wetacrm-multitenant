@@ -8,6 +8,11 @@ a foreign key.
 """
 
 import pytest
+from sqlalchemy import select
+
+from app.core.tenancy import platform_scope
+from app.database.session import SessionLocal
+from app.users.models import User
 
 API = "/api/v1"
 
@@ -253,25 +258,42 @@ def test_platform_admin_sees_all_tenants(client, platform_admin_token):
     assert {"alpha", "bravo"} <= slugs
 
 
-def test_platform_admin_cannot_use_tenant_endpoints_without_impersonating(client, platform_admin_token):
+def test_platform_admin_cannot_use_tenant_endpoints(client, platform_admin_token):
     resp = client.get(
         f"{API}/companies", headers={"Authorization": f"Bearer {platform_admin_token}"}
     )
     assert resp.status_code in (401, 403)
 
 
-def test_impersonation_grants_exactly_one_tenant(client, platform_admin_token, alpha, bravo):
-    resp = client.post(
-        f"{API}/platform/tenants/{alpha.tenant_id}/impersonate",
-        json={},
-        headers={"Authorization": f"Bearer {platform_admin_token}"},
-    )
-    assert resp.status_code == 200, resp.text
-    headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+def test_there_is_no_way_for_an_admin_to_enter_a_workspace(client, platform_admin_token, alpha):
+    """Impersonation was removed: a platform admin has no route into tenant data.
 
-    seen = _ids(client.get(f"{API}/companies", params={"page_size": 200}, headers=headers).json())
-    assert alpha.ids["company"] in seen
-    assert bravo.ids["company"] not in seen
+    The console manages a workspace — its modules, template and status — from the
+    outside. Nothing mints a token for someone else's tenant.
+    """
+    headers = {"Authorization": f"Bearer {platform_admin_token}"}
+    assert client.post(
+        f"{API}/platform/tenants/{alpha.tenant_id}/impersonate", json={}, headers=headers
+    ).status_code == 404
+
+    for path in ("/companies", "/contacts", "/policies", "/loans", "/quotations"):
+        assert client.get(f"{API}{path}", headers=headers).status_code in (401, 403), path
+
+
+def test_a_token_cannot_name_a_tenant_that_is_not_the_users_own(client, alpha, bravo):
+    """The last line of defence: even a forged-looking `tid` is refused.
+
+    Signed tokens make this hard to reach in practice, which is exactly why it is
+    worth asserting — the check is invisible until it is missing.
+    """
+    from app.core.security import create_access_token
+
+    with SessionLocal() as db, platform_scope():
+        user = db.scalar(select(User).where(User.email == alpha.admin_email))
+        crossed = create_access_token(user.id, bravo.tenant_id)
+
+    resp = client.get(f"{API}/companies", headers={"Authorization": f"Bearer {crossed}"})
+    assert resp.status_code == 401
 
 
 # --- provisioning a tenant through the platform API ---------------------------
@@ -327,3 +349,24 @@ def test_duplicate_owner_email_is_rejected(client, platform_admin_token, alpha):
         headers={"Authorization": f"Bearer {platform_admin_token}"},
     )
     assert resp.status_code == 409
+
+
+def test_a_platform_admin_gets_a_refusal_not_a_crash(client, platform_admin_token):
+    """Every tenant endpoint, including the ones guarded only by `get_current_user`.
+
+    A platform admin has no workspace, so a tenant-scoped query refuses to run — that
+    must surface as a 403, never as a 500 that reads like a broken server.
+    """
+    headers = {"Authorization": f"Bearer {platform_admin_token}"}
+    for path in ("/search?q=a", "/notifications", "/io/entities", "/modules",
+                 "/companies", "/contacts", "/activities/feed"):
+        status = client.get(f"{API}{path}", headers=headers).status_code
+        assert status != 500, f"{path} crashed instead of refusing"
+        assert status in (401, 403, 404, 200), f"{path} returned {status}"
+
+
+def test_search_refuses_a_platform_admin(client, platform_admin_token):
+    resp = client.get(
+        f"{API}/search", params={"q": "a"}, headers={"Authorization": f"Bearer {platform_admin_token}"}
+    )
+    assert resp.status_code == 403

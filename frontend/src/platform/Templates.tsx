@@ -1,13 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { Copy, Lock, Pencil, Trash2 } from "lucide-react";
+import { Copy, Lock, Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 
-import { Modal } from "@/components/Modal";
+import { ConfirmDialog, Modal } from "@/components/Modal";
+import { Select } from "@/components/Select";
 import { useToast } from "@/context/ToastContext";
 import { api, errorMessage } from "@/lib/api";
 import { TemplateEditor } from "@/platform/TemplateEditor";
 import type { CrmTemplate, CrmTemplateDetail } from "@/types";
+
+/** "Agency Lite" becomes "agency_lite" — mirrors the key pattern the API enforces. */
+function slugify(name: string): string {
+  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
 
 export default function Templates() {
   const { toast } = useToast();
@@ -16,6 +22,11 @@ export default function Templates() {
   const [inspecting, setInspecting] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [cloneForm, setCloneForm] = useState({ key: "", name: "", description: "" });
+  const [creating, setCreating] = useState(false);
+  const [deleting, setDeleting] = useState<CrmTemplate | null>(null);
+  const [newForm, setNewForm] = useState({
+    key: "", name: "", description: "", base_key: "general_crm",
+  });
 
   const templates = useQuery({
     queryKey: ["platform", "templates"],
@@ -40,14 +51,33 @@ export default function Templates() {
     onError: (err) => toast(errorMessage(err), "error"),
   });
 
+  const create = useMutation({
+    mutationFn: async () => (await api.post("/platform/templates", newForm)).data,
+    onSuccess: (created) => {
+      toast("Template created");
+      setCreating(false);
+      queryClient.invalidateQueries({ queryKey: ["platform", "templates"] });
+      // Straight into the editor: a template you cannot immediately shape is just a
+      // copy of something else wearing a new name.
+      setEditing(created.key);
+    },
+    onError: (err) => toast(errorMessage(err), "error"),
+  });
+
   const remove = useMutation({
     mutationFn: async (key: string) => (await api.delete(`/platform/templates/${key}`)).data,
     onSuccess: () => {
       toast("Template deleted");
+      setDeleting(null);
       queryClient.invalidateQueries({ queryKey: ["platform", "templates"] });
     },
     onError: (err) => toast(errorMessage(err), "error"),
   });
+
+  const openCreate = () => {
+    setNewForm({ key: "", name: "", description: "", base_key: "general_crm" });
+    setCreating(true);
+  };
 
   const openClone = (template: CrmTemplate) => {
     setCloning(template);
@@ -60,13 +90,18 @@ export default function Templates() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold">Templates</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          The recipe a new tenant is built from — which modules they get, what those modules are
-          called, plus starting roles, pipeline stages and settings. A template is copied into a
-          tenant when it is created, so editing one never changes an existing workspace.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold">Templates</h1>
+          <p className="max-w-2xl text-sm text-slate-500 dark:text-slate-400">
+            The recipe a new tenant is built from — which modules they get, what those modules are
+            called, plus starting roles, pipeline stages and settings. A template is copied into a
+            tenant when it is created, so editing one never changes an existing workspace.
+          </p>
+        </div>
+        <button className="btn-primary shrink-0" onClick={openCreate}>
+          <Plus size={16} /> New template
+        </button>
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -126,7 +161,7 @@ export default function Templates() {
                 <button
                   className="btn-ghost !p-2 text-red-500"
                   title="Delete this custom template"
-                  onClick={() => remove.mutate(template.key)}
+                  onClick={() => setDeleting(template)}
                 >
                   <Trash2 size={15} />
                 </button>
@@ -153,6 +188,89 @@ export default function Templates() {
           />
         )}
       </Modal>
+
+      <Modal open={creating} onClose={() => setCreating(false)} title="New template">
+        <div className="space-y-4">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            A template starts from an existing one. Starting truly empty would produce a
+            workspace with no roles and no pipeline — broken in a way nobody notices until
+            its owner tries to sign in. Pick the closest fit, then change what you need.
+          </p>
+          <div>
+            <label className="label">Start from</label>
+            <Select
+              options={(templates.data ?? []).map((t) => ({ value: t.key, label: t.name }))}
+              value={newForm.base_key}
+              onChange={(v) => setNewForm({ ...newForm, base_key: v })}
+              clearable={false}
+            />
+          </div>
+          <div>
+            <label className="label">Name</label>
+            <input
+              className="input"
+              value={newForm.name}
+              placeholder="Agency Lite"
+              onChange={(e) => {
+                const name = e.target.value;
+                setNewForm((f) => ({
+                  ...f,
+                  name,
+                  // The key follows the name until it is edited by hand: one field to
+                  // fill in for the common case, still overridable for the rest.
+                  key: f.key === slugify(f.name) || f.key === "" ? slugify(name) : f.key,
+                }));
+              }}
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="label">Key</label>
+            <input
+              className="input"
+              value={newForm.key}
+              placeholder="agency_lite"
+              onChange={(e) => setNewForm({ ...newForm, key: e.target.value })}
+            />
+            <p className="mt-1 text-xs text-slate-400">
+              Lowercase letters, numbers and underscores. Permanent — tenants are stamped with it.
+            </p>
+          </div>
+          <div>
+            <label className="label">Description</label>
+            <textarea
+              className="input"
+              rows={2}
+              placeholder="Who this template is for."
+              value={newForm.description}
+              onChange={(e) => setNewForm({ ...newForm, description: e.target.value })}
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button className="btn-secondary" onClick={() => setCreating(false)}>Cancel</button>
+            <button
+              className="btn-primary"
+              disabled={
+                create.isPending ||
+                newForm.name.trim().length < 2 ||
+                !/^[a-z0-9_]{2,}$/.test(newForm.key)
+              }
+              onClick={() => create.mutate()}
+            >
+              {create.isPending ? "Creating…" : "Create and customise"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={!!deleting}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => deleting && remove.mutate(deleting.key)}
+        title={`Delete ${deleting?.name ?? ""}?`}
+        message="Workspaces already built from it keep everything they were given — a template is copied at provisioning, never referenced afterwards. Only new workspaces lose the option."
+        busy={remove.isPending}
+      />
 
       <Modal open={!!cloning} onClose={() => setCloning(null)} title={`Clone ${cloning?.name ?? ""}`}>
         <div className="space-y-4">

@@ -21,9 +21,26 @@ class TenantOut(ORMModel):
     suspended_at: datetime | None = None
 
 
+class TenantUserOut(BaseModel):
+    id: str
+    email: str
+    full_name: str
+    role: str | None = None
+    is_active: bool = True
+    last_login_at: datetime | None = None
+    is_owner: bool = False
+
+
 class TenantDetailOut(TenantOut):
     user_count: int = 0
     settings: dict = {}
+    owner_email: str | None = None
+    owner_name: str | None = None
+    module_count: int = 0
+    enabled_module_count: int = 0
+    #: Row counts for the modules this workspace actually has.
+    record_counts: dict[str, int] = {}
+    users: list[TenantUserOut] = []
 
 
 class TenantCreate(BaseModel):
@@ -47,18 +64,6 @@ class TenantUpdate(BaseModel):
     currency: str | None = None
     locale: str | None = None
     default_country_code: str | None = None
-
-
-class ImpersonateIn(BaseModel):
-    user_id: str | None = None  # defaults to the tenant's first Super Admin
-
-
-class ImpersonateOut(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-    expires_in_minutes: int
-    tenant: TenantOut
-    acting_as_email: str
 
 
 class PlatformStatsOut(BaseModel):
@@ -90,6 +95,18 @@ class TemplateClone(BaseModel):
     key: str = Field(min_length=2, max_length=50, pattern=r"^[a-z0-9_]+$")
     name: str = Field(min_length=2, max_length=150)
     description: str | None = None
+
+
+class TemplateCreate(TemplateClone):
+    """A new template always starts from an existing one.
+
+    A template with no roles and no pipeline stages would provision a workspace whose
+    owner has no Super Admin role to be given — broken in a way nobody would notice
+    until they tried to sign in. So "new" means "copy of a working one, yours to
+    change", and the base is explicit rather than assumed.
+    """
+
+    base_key: str = "general_crm"
 
 
 class TenantModuleUpdate(BaseModel):

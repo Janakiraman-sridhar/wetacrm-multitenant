@@ -5,7 +5,7 @@ A role's `permissions` column stores a JSON list of these strings; "*" grants ev
 
 MODULES = [
     "users", "roles", "companies", "contacts", "leads", "deals", "activities",
-    "tasks", "calendar", "products", "quotations", "invoices", "projects", "policies",
+    "tasks", "calendar", "products", "quotations", "invoices", "projects", "policies", "loans",
     "support", "documents", "reports", "settings",
 ]
 
@@ -24,7 +24,7 @@ def _grant(modules: list[str], actions: list[str] | None = None) -> list[str]:
 
 
 SALES_MODULES = ["companies", "contacts", "leads", "deals", "activities", "tasks",
-                 "calendar", "products", "quotations", "documents", "reports", "policies"]
+                 "calendar", "products", "quotations", "documents", "reports", "policies", "loans"]
 
 # Default (system) roles seeded on first boot.
 DEFAULT_ROLES: dict[str, dict] = {

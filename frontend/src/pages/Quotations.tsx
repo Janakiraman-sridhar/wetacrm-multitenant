@@ -1,6 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { FileDown, ListFilter, Plus, Receipt, Search, Send, Trash2 } from "lucide-react";
+import { FileDown, ListFilter, Plus, Receipt, Search, Send, ShieldCheck, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 
@@ -9,6 +9,10 @@ import { useViewColumns } from "@/components/CrudPage";
 import { Column, DataTable } from "@/components/DataTable";
 import { FiltersBar } from "@/components/FiltersBar";
 import { ImportExport } from "@/components/ImportExport";
+import {
+  InsuranceQuoteForm, InsuranceQuoteValues, emptyInsuranceQuote, fromInsuranceQuote,
+  toInsurancePayload,
+} from "@/components/InsuranceQuoteForm";
 import { ConfirmDialog, Modal } from "@/components/Modal";
 import { StatusBadge } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
@@ -16,6 +20,7 @@ import { useToast } from "@/context/ToastContext";
 import { API_URL, api, errorMessage, tokenStore } from "@/lib/api";
 import { ActiveFilter, countActive, FilterFieldDef, serializeFilters } from "@/lib/filters";
 import { formatDate, formatMoney } from "@/lib/format";
+import { useHasModule } from "@/lib/modules";
 import { useCompanyOptions, useContactOptions, useProducts } from "@/lib/options";
 import type { Page, Quotation } from "@/types";
 
@@ -45,6 +50,12 @@ export default function Quotations() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Quotation | null>(null);
   const [deleting, setDeleting] = useState<Quotation | null>(null);
+  const [insuranceOpen, setInsuranceOpen] = useState(false);
+  const [converting, setConverting] = useState<Quotation | null>(null);
+  const [policyNumber, setPolicyNumber] = useState("");
+
+  const hasModule = useHasModule();
+  const insuranceTenant = hasModule("policies");
 
   const companies = useCompanyOptions();
   const contacts = useContactOptions();
@@ -69,6 +80,7 @@ export default function Quotations() {
   });
 
   const form = useForm<BillingFormValues>({ defaultValues: emptyBillingValues });
+  const insuranceForm = useForm<InsuranceQuoteValues>({ defaultValues: emptyInsuranceQuote });
 
   const toApi = (v: BillingFormValues) => ({
     company_id: v.company_id || null,
@@ -122,6 +134,33 @@ export default function Quotations() {
     onError: (err) => toast(errorMessage(err), "error"),
   });
 
+  const saveInsuranceMutation = useMutation({
+    mutationFn: async (v: InsuranceQuoteValues) => {
+      const payload = toInsurancePayload(v);
+      if (editing) return (await api.patch(`/quotations/${editing.id}`, payload)).data;
+      return (await api.post("/quotations", payload)).data;
+    },
+    onSuccess: () => {
+      toast(editing ? "Quotation updated" : "Insurance quotation created");
+      setInsuranceOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["/quotations"] });
+    },
+    onError: (err) => toast(errorMessage(err), "error"),
+  });
+
+  const convertToPolicyMutation = useMutation({
+    mutationFn: async ({ q, number }: { q: Quotation; number: string }) =>
+      (await api.post(`/quotations/${q.id}/convert-to-policy`, { policy_number: number })).data,
+    onSuccess: (policy) => {
+      toast(`Policy ${policy.policy_number} booked`);
+      setConverting(null);
+      setPolicyNumber("");
+      queryClient.invalidateQueries({ queryKey: ["/quotations"] });
+      queryClient.invalidateQueries({ queryKey: ["/policies"] });
+    },
+    onError: (err) => toast(errorMessage(err), "error"),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async (q: Quotation) => (await api.delete(`/quotations/${q.id}`)).data,
     onSuccess: () => {
@@ -138,7 +177,19 @@ export default function Quotations() {
     setModalOpen(true);
   };
 
+  const openInsuranceCreate = () => {
+    setEditing(null);
+    insuranceForm.reset(emptyInsuranceQuote);
+    setInsuranceOpen(true);
+  };
+
   const openEdit = (q: Quotation) => {
+    if (q.kind === "insurance") {
+      setEditing(q);
+      insuranceForm.reset(fromInsuranceQuote(q));
+      setInsuranceOpen(true);
+      return;
+    }
     setEditing(q);
     form.reset({
       company_id: q.company_id ?? "",
@@ -166,7 +217,23 @@ export default function Quotations() {
 
   const columns: Column<Quotation>[] = [
     { key: "number", header: "#", render: (q) => <span className="font-mono text-xs">{q.number}</span> },
-    { key: "company", header: "Company", render: (q) => q.company?.name ?? "—" },
+    {
+      key: "company", header: "For",
+      render: (q) =>
+        q.kind === "insurance" ? (
+          <span>
+            <span className="block">
+              {q.contact ? `${q.contact.first_name} ${q.contact.last_name}`.trim() : "—"}
+            </span>
+            <span className="block text-xs text-slate-400">
+              {(q.insurance?.options?.length ?? 0)} insurer
+              {(q.insurance?.options?.length ?? 0) === 1 ? "" : "s"} compared
+            </span>
+          </span>
+        ) : (
+          q.company?.name ?? "—"
+        ),
+    },
     { key: "status", header: "Status", render: (q) => <StatusBadge value={q.status} /> },
     { key: "issue_date", header: "Issued", render: (q) => formatDate(q.issue_date) },
     { key: "valid_until", header: "Valid until", render: (q) => formatDate(q.valid_until) },
@@ -229,6 +296,11 @@ export default function Quotations() {
               }}
             />
           </div>
+          {canWrite && insuranceTenant && (
+            <button className="btn-secondary" onClick={openInsuranceCreate} title="Compare insurers for one risk">
+              <ShieldCheck size={15} /> Insurance quote
+            </button>
+          )}
           {canWrite && (
             <button className="btn-primary" onClick={openCreate}>
               <Plus size={16} /> New Quotation
@@ -259,19 +331,42 @@ export default function Quotations() {
         onRowClick={canWrite ? openEdit : undefined}
         actions={(q) => (
           <div className="flex justify-end gap-1">
-            <button className="btn-ghost !p-1.5" title="View PDF" onClick={() => openAuthedPdf(`/quotations/${q.id}/pdf`)}>
+            <button
+              className="btn-ghost !p-1.5"
+              title={q.kind === "insurance" ? "Comparison sheet" : "View PDF"}
+              onClick={() =>
+                openAuthedPdf(
+                  q.kind === "insurance"
+                    ? `/quotations/${q.id}/comparison.pdf`
+                    : `/quotations/${q.id}/pdf`
+                )
+              }
+            >
               <FileDown size={14} />
             </button>
-            {canWrite && (
+            {canWrite && q.kind !== "insurance" && (
               <button className="btn-ghost !p-1.5" title="Send by email" onClick={() => sendMutation.mutate(q)}>
                 <Send size={14} />
               </button>
             )}
-            {hasPerm("invoices:write") && q.status !== "converted" && (
-              <button className="btn-ghost !p-1.5 text-emerald-600" title="Convert to invoice" onClick={() => convertMutation.mutate(q)}>
-                <Receipt size={14} />
-              </button>
-            )}
+            {q.kind === "insurance"
+              ? hasPerm("policies:write") && !q.policy_id && (
+                  <button
+                    className="btn-ghost !p-1.5 text-emerald-600"
+                    title="Book as a policy"
+                    onClick={() => {
+                      setConverting(q);
+                      setPolicyNumber("");
+                    }}
+                  >
+                    <ShieldCheck size={14} />
+                  </button>
+                )
+              : hasModule("invoices") && hasPerm("invoices:write") && q.status !== "converted" && (
+                  <button className="btn-ghost !p-1.5 text-emerald-600" title="Convert to invoice" onClick={() => convertMutation.mutate(q)}>
+                    <Receipt size={14} />
+                  </button>
+                )}
             {hasPerm("quotations:delete") && (
               <button className="btn-ghost !p-1.5 text-red-500" title="Delete" onClick={() => setDeleting(q)}>
                 <Trash2 size={14} />
@@ -293,6 +388,56 @@ export default function Quotations() {
           showTerms
           onCancel={() => setModalOpen(false)}
         />
+      </Modal>
+
+      <Modal
+        open={insuranceOpen}
+        onClose={() => setInsuranceOpen(false)}
+        title={editing ? `Edit ${editing.number}` : "New insurance quotation"}
+        wide
+      >
+        <InsuranceQuoteForm
+          form={insuranceForm}
+          onSubmit={(v) => saveInsuranceMutation.mutate(v)}
+          busy={saveInsuranceMutation.isPending}
+          contacts={contacts}
+          onCancel={() => setInsuranceOpen(false)}
+        />
+      </Modal>
+
+      <Modal open={!!converting} onClose={() => setConverting(null)} title="Book as a policy">
+        <div className="space-y-4">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            The selected option on {converting?.number} becomes a policy. The policy number
+            comes from the insurer, so enter the one on the document — the rest is carried
+            across from the quotation.
+          </p>
+          <div>
+            <label className="label">Policy number</label>
+            <input
+              className="input"
+              autoFocus
+              value={policyNumber}
+              onChange={(e) => setPolicyNumber(e.target.value)}
+              placeholder="As printed on the policy"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button className="btn-secondary" onClick={() => setConverting(null)}>
+              Cancel
+            </button>
+            <button
+              className="btn-primary"
+              disabled={!policyNumber.trim() || convertToPolicyMutation.isPending}
+              onClick={() =>
+                converting &&
+                convertToPolicyMutation.mutate({ q: converting, number: policyNumber.trim() })
+              }
+            >
+              {convertToPolicyMutation.isPending ? "Booking…" : "Book policy"}
+            </button>
+          </div>
+        </div>
       </Modal>
 
       <ConfirmDialog

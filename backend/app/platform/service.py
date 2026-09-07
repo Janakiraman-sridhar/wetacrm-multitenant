@@ -17,7 +17,8 @@ from app.core.security import hash_password
 from app.services import crypto
 from app.core.tenancy import platform_scope, tenant_scope
 from app.platform import provisioning
-from app.platform.models import PlatformAuditLog, Tenant
+from app.platform.catalog import MODULE_CATALOG
+from app.platform.models import PlatformAuditLog, Tenant, TenantModule
 from app.users.models import User
 
 log = logging.getLogger("weta.platform")
@@ -201,9 +202,84 @@ def ensure_tenant_keys(db: Session) -> None:
         db.commit()
 
 
+#: Prefix marking an address freed by a tenant deletion. It keeps the original
+#: address readable inside it, so a restore during the retention window can put it
+#: back without a second place to look it up.
+TOMBSTONE_PREFIX = "deleted."
+
+
+def tombstone_email(tenant_id: str, email: str) -> str:
+    return f"{TOMBSTONE_PREFIX}{tenant_id[:8]}.{email}"
+
+
+def original_email(tombstoned: str) -> str:
+    """Reverse `tombstone_email`. Returns the input unchanged if it is not one."""
+    if not tombstoned.startswith(TOMBSTONE_PREFIX):
+        return tombstoned
+    return tombstoned.split(".", 2)[-1]
+
+
+def release_tenant_users(db: Session, tenant_id: str) -> int:
+    """Deactivate a deleted tenant's users and free their email addresses.
+
+    `users.email` is globally unique — that is what lets the sign-in screen work
+    without a workspace picker. So a deleted tenant would otherwise hold its owner's
+    address hostage for the whole retention window, and re-creating that client with
+    the same address would be refused. The row stays (the data is retained), but the
+    address is released by tombstoning it.
+
+    Deactivating matters as much as renaming: a user whose tenant is gone must not be
+    able to sign in, whatever their token or password says.
+    """
+    with tenant_scope(tenant_id):
+        users = list(db.scalars(select(User)).all())
+        for user in users:
+            user.is_active = False
+            if not user.email.startswith(TOMBSTONE_PREFIX):
+                user.email = tombstone_email(tenant_id, user.email)
+    return len(users)
+
+
+def backfill_new_modules(db: Session) -> None:
+    """Give existing tenants a row for any module added to the catalog since they were made.
+
+    Without this, shipping a module reaches only workspaces created afterwards: the
+    sidebar is built from `tenant_modules`, so an older tenant would never see it no
+    matter what its template says.
+
+    It is additive by construction — `_apply_modules` writes rows that are *missing*
+    and never touches one that exists — so this cannot overwrite a choice the tenant
+    made. Whether the new module arrives switched on is decided by the tenant's own
+    template, which is the same answer it would have got at provisioning time.
+    """
+    with platform_scope():
+        tenants = list(db.scalars(select(Tenant).where(Tenant.deleted_at.is_(None))).all())
+
+    touched = False
+    for tenant in tenants:
+        with tenant_scope(tenant.id):
+            present = {key for key in db.scalars(select(TenantModule.module_key)).all()}
+            missing = [d.key for d in MODULE_CATALOG if d.key not in present]
+            if not missing:
+                continue
+            try:
+                config = provisioning.get_template(db, tenant.template_key or "general_crm")
+            except Exception:
+                config = provisioning.get_template(db, "general_crm")
+            provisioning._apply_modules(db, config)
+            touched = True
+            log.info("Added modules %s to tenant %s", ", ".join(missing), tenant.slug)
+    # One commit for every tenant. Startup writes hold a SQLite write lock, and a
+    # reload can briefly leave two processes competing for it — a single short
+    # transaction is far less likely to sit behind the other one.
+    if touched:
+        db.commit()
+
+
 def bootstrap(db: Session) -> None:
     """Startup: load system templates, then ensure the platform admin and Default tenant."""
     provisioning.sync_system_templates(db)
     ensure_platform_admin(db)
     ensure_default_tenant(db)
     ensure_tenant_keys(db)
+    backfill_new_modules(db)

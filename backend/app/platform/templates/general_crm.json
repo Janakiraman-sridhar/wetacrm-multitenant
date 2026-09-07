@@ -1,7 +1,7 @@
 {
   "key": "general_crm",
   "name": "General CRM",
-  "version": 3,
+  "version": 4,
   "description": "The full-purpose CRM: companies, contacts, leads, deals, projects, products, quotations, invoices and support. This is the behaviour the product shipped with before templates existed.",
   "modules": [
     {
@@ -105,6 +105,12 @@
       "enabled": false,
       "label": "Poster Studio",
       "order": 7
+    },
+    {
+      "key": "loans",
+      "enabled": false,
+      "label": "Loans",
+      "order": 5
     }
   ],
   "roles": [

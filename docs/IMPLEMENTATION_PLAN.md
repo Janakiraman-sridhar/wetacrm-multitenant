@@ -56,7 +56,7 @@ file downloads, notifications.
 | 0.8 | **Auth.** `users.tenant_id` (nullable) and `users.is_platform_admin`. Add a `tid` claim in `_create_token`; set the tenant context in `get_current_user`; reject logins for suspended tenants. | `app/core/security.py`, `app/core/deps.py`, `app/auth/router.py`, `app/users/models.py` | M |
 | 0.9 | **Infrastructure scoping.** Storage keys prefixed `tenants/<id>/` with prefix verification on download; `tenant_id` as a Meilisearch filterable attribute and applied to every query; Socket.IO rooms `tenant:<tid>:user:<uid>`; rate-limit key includes tenant; every Celery beat job iterates active tenants inside `tenant_scope()`. | `app/services/{storage,search_client,search_sync}.py`, `app/search/router.py`, `app/notifications/socket.py`, `app/core/rate_limit.py`, `app/automation/tasks.py` | L |
 | 0.10 | **Isolation test suite.** pytest fixtures creating two tenants with overlapping data, then a parametrised test per module asserting Tenant A's token gets 404/403 — never data — for every list, detail, update, delete, export, template, import, search, drilldown and file-download endpoint. | `backend/tests/conftest.py`, `backend/tests/test_tenant_isolation.py` | L |
-| 0.11 | **Platform auth + impersonation.** Platform admin login; `POST /platform/tenants/{id}/impersonate` minting a ≤60-minute token carrying `tid` + `imp`; audit rows on start and end. | `app/platform/router.py`, `app/core/security.py` | M |
+| 0.11 | **Platform auth.** Platform admin login and console session. *Impersonation was built here and later removed — see the Phase 6 notes; a platform admin has no route into tenant data.* | `app/platform/router.py`, `app/core/security.py` | M |
 
 **Risks.** 0.7 is where a subtle miss becomes a data leak — budget time for it and do not shortcut 0.10.
 0.5 is a destructive migration; take a database backup first and test the rollback path.
@@ -94,7 +94,7 @@ created from `insurance_agent` shows the insurance sidebar with renamed modules.
 | 1.3 | **`provision_tenant()`.** Replaces the global `seed.run()`: creates roles, module config, stages, masters, settings, email templates, poster templates and the owner user in one idempotent transaction. Refactor `app/database/seed.py` into it. | `app/platform/service.py`, `app/database/seed.py` | L |
 | 1.4 | **Module config.** `tenant_modules` (tenant_id, module_key, enabled, label, order) driving what the tenant can see. API endpoint returning the current tenant's module config. | `app/platform/models.py`, `app/settings/router.py` | M |
 | 1.5 | **Platform API.** Tenants list/create/detail/update/suspend/reactivate/soft-delete; template list and clone; platform dashboard metrics. All behind `is_platform_admin`. | `app/platform/router.py`, `app/main.py` | L |
-| 1.6 | **Platform console UI.** A separate React shell at `/platform` with its own layout: tenant table, create-tenant wizard (details → template → owner → confirm), tenant detail tabs, impersonate button with return-to-platform banner, template manager. | `frontend/src/platform/**` (new), `frontend/src/App.tsx` | L |
+| 1.6 | **Platform console UI.** A separate React shell at `/platform` with its own layout: tenant table, create-tenant wizard (details → template → owner → confirm), tenant detail page (owner, users, modules, record counts), template manager with create/edit/delete. | `frontend/src/platform/**` (new), `frontend/src/App.tsx` | L |
 | 1.7 | **Tenant app respects module config.** `AppLayout`'s hardcoded `NAV` array becomes API-driven (labels and order included); routes 404 for disabled modules; `useAuth` exposes module config alongside permissions. | `frontend/src/layouts/AppLayout.tsx`, `frontend/src/App.tsx`, `frontend/src/context/AuthContext.tsx` | M |
 | 1.8 | **Migrate the Default tenant** onto the `general_crm` template so it is a normal tenant like any other. | `migrations/versions/0003_default_tenant_template.py` | S |
 
@@ -248,7 +248,7 @@ most common thing to block a launch. 5.1–5.5 have no external dependency and s
 
 ---
 
-## Phase 6 — Quotations, Loans and Reports
+## Phase 6 — Quotations, Loans and Reports ✅ COMPLETE
 
 | # | Task | Files | Size |
 |---|---|---|---|
@@ -257,6 +257,52 @@ most common thing to block a launch. 5.1–5.5 have no external dependency and s
 | 6.3 | **Loans module.** Model, CRUD, Kanban (`enquiry → documents → logged in → sanctioned → disbursed \| rejected`), payout tracking, filters, CSV I/O. | `app/loans/**` (new) | L |
 | 6.4 | **Report suite.** Renewal register, production/premium by month-insurer-product-bank-agent, commission (earned/received/pending), lapse and retention, customer growth, birthday list, cross-sell opportunities, loan payouts, agent leaderboard. CSV and PDF export. | `app/reports/router.py`, `frontend/src/pages/Reports.tsx` | L |
 | 6.5 | **Global search extended** to customers, policies, quotations and loans; tenant-filtered; PAN searchable by blind index (exact match only). | `app/search/router.py`, `app/services/search_sync.py` | M |
+
+**What differed, and why.**
+
+- **6.1** The plan said "quote lines become plan options". They did not: the options live in
+  their own `insurance` JSON column, because `quotation_items` exist to be *summed* and
+  competing insurer quotes must never be. An insurance quotation's total is the **selected**
+  option — three insurers at ₹12k/₹14k/₹16.5k is a ₹12k–₹16.5k decision, not a ₹42.5k sale.
+- **6.1** The comparison is a separate renderer (`app/quotations/comparison_pdf.py`), not a mode
+  of `document_pdf`. One prints line items down the page and sums them; the other puts insurers
+  across a landscape page and sums nothing. Bending one function into both would have meant a
+  suppressed totals block and a transposed layout.
+- **6.2** Convert-to-policy is an addition, not a replacement: `POST /quotations/{id}/convert`
+  still makes an invoice for a standard quotation, and refuses an insurance one with an
+  explanation. A tenant running both keeps both.
+- **6.4** Insurance reports live beside the sales templates on the same Reports page, switched
+  by a Sales/Insurance toggle that defaults to Insurance for any workspace with a policy book.
+- **Unplanned, found while verifying.** A module a tenant had switched off was still reachable
+  over the API — "disabled" meant *hidden from the sidebar*, nothing more. `require_perm` now
+  refuses a permission whose module is off, `require_module` gates the Poster Studio (which is
+  permissioned on `contacts:read` and so cannot be gated by its permission alone), search drops
+  groups for modules a workspace does not have, and `backfill_new_modules()` gives existing
+  tenants a row for modules added to the catalog after they were provisioned.
+- **PDF/CSV** export shipped; PDF export of the *reports* did not — the two reports worth
+  printing are call lists, and CSV is what an agency actually takes into a day of calls.
+- **Not done:** 6.2's "send quote by WhatsApp" from the quotation row. The comparison sheet is a
+  PDF, and click-to-chat cannot attach a file — it needs the Cloud API media send from 5.6.
+
+**Console changes made after Phase 6, from testing the console itself.**
+
+- **Impersonation removed.** A platform admin can no longer open a client's workspace: the
+  endpoint is gone, `_create_token` cannot express an `imp` claim, and `get_current_user`
+  refuses any token whose tenant is not the user's own. A support session that can read every
+  customer's PAN and Aadhaar is a standing breach waiting for one compromised admin account,
+  and an audit trail only tells you afterwards. The tenant page grew the details that made
+  "go inside and look" tempting: owner, users, roles, last sign-in, module configuration and
+  per-module record counts.
+- **A platform admin now gets 403, not 500,** on endpoints guarded only by `get_current_user`.
+  The tenant-scoped query was raising `TenantContextMissing`, which is correct behaviour
+  surfacing as a crash.
+- **Templates can be created and deleted from the console,** not only cloned. A new template
+  always starts from an existing one, because an empty one provisions a workspace with no
+  roles and no pipeline — broken in a way nobody notices until its owner cannot sign in.
+  Deleting now asks first; it used to fire on a single click.
+- **Deleting a tenant releases its email addresses.** `users.email` is globally unique, so a
+  soft-deleted tenant held its owner's address for the entire retention window — meaning the
+  commonest console mistake, deleting a client and adding them back, was impossible to undo.
 
 ---
 

@@ -126,33 +126,78 @@ take a dump first.
 
 ## 5. Backups
 
-Two things must be backed up, and **not to the same place**:
+Two things must be backed up, they are backed up **differently**, and they must not
+end up in the same place — a copy of the database beside a copy of the key is a copy
+of the plaintext.
+
+### The key: once, by hand, off the server
+
+`PII_MASTER_KEY` is a 44-character string that changes approximately never. It does
+not belong in an automated job; it belongs in **two durable places a person put it**:
+
+1. A password manager, as a secure note — "WeTa CRM PII_MASTER_KEY — production",
+   with the date and which server it belongs to.
+2. Printed on paper, in a safe or with the company documents. This is the copy that
+   survives losing access to the password manager.
+
+Two copies, not one. Then confirm the backup matches what is actually running:
 
 ```bash
-# 1. The database
-docker compose exec -T postgres pg_dump -U weta weta_crm | gzip > weta-$(date +%F).sql.gz
-
-# 2. Uploaded files
-docker compose exec -T minio mc mirror --overwrite /data/weta-crm ./backup-files/
+docker compose exec backend printenv PII_MASTER_KEY
 ```
 
-And separately, in your password manager or secret store: `PII_MASTER_KEY`.
+Compare it character by character with the copy you stored. If they differ, your
+backup is of a key nothing is using.
 
-### Restoring
+Never put it in: the repository, a shared document, a chat message to yourself, the
+same bucket as the database dumps, or a file on this server.
+
+### The database and files: nightly, automated
 
 ```bash
-gunzip -c weta-2026-09-08.sql.gz | docker compose exec -T postgres psql -U weta weta_crm
+./scripts/backup.sh
+```
+
+Writes a compressed dump and mirrors the uploaded files into `./backups`, refuses to
+call a truncated or near-empty dump a backup, and prunes anything older than 30 days.
+Nightly, via `crontab -e`:
+
+```
+30 2 * * * cd /path/to/wetacrm-multitenant && ./scripts/backup.sh >> /var/log/weta-backup.log 2>&1
+```
+
+Copy `./backups` somewhere off this machine — that is what makes it a backup rather
+than a second copy on the same disk that dies.
+
+## 6. Restoring, and proving you can
+
+```bash
+gunzip -c backups/weta-db-2026-09-08_0230.sql.gz   | docker compose exec -T postgres psql -U weta weta_crm
 ```
 
 Restore with **the same `PII_MASTER_KEY`** the dump was taken under. With a different
-key, every PAN and Aadhaar fails to decrypt — loudly, because AES-GCM authenticates,
-so you get an error rather than garbage silently written back over real values. That
-is the failure mode to expect if the key was lost; there is no way to read those
-fields again.
+key every PAN and Aadhaar fails to decrypt, loudly — AES-GCM authenticates, so you get
+an error rather than garbage written back over real values. If the key is genuinely
+lost there is no way to read those fields again.
+
+**Prove this works before you need it to:**
+
+```bash
+./scripts/restore-drill.sh backups/weta-db-2026-09-08_0230.sql.gz
+```
+
+It restores into a scratch database beside the live one (which it never touches),
+counts what came back, and decrypts one stored PAN with the key currently in the
+environment. That last step is the point: it proves the dump and the key you hold
+belong together. A dump that restores cleanly but whose encrypted columns cannot be
+read is not a backup of a CRM.
+
+Run it after the first deployment, and again whenever the key or the backup setup
+changes.
 
 ---
 
-## 6. What runs where
+## 7. What runs where
 
 | Container | What it does | Safe to lose? |
 |---|---|---|
@@ -169,7 +214,7 @@ exercised by the local development setup, which runs with none of these services
 
 ---
 
-## 7. When something is wrong
+## 8. When something is wrong
 
 **The backend will not start.**
 `docker compose logs backend`. If it mentions `PII_MASTER_KEY`, the variable is
@@ -197,7 +242,7 @@ off unless its template says otherwise.
 
 ---
 
-## 8. Known limits
+## 9. Known limits
 
 Honest list, so nothing here is a surprise in production:
 

@@ -1,10 +1,10 @@
 from sqlalchemy import Boolean, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.database.base import BaseModel
+from app.database.base import BaseModel, TenantScoped
 
 
-class Notification(BaseModel):
+class Notification(TenantScoped, BaseModel):
     __tablename__ = "notifications"
 
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)

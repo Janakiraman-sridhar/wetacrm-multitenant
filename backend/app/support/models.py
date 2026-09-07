@@ -1,16 +1,18 @@
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database.base import BaseModel
+from app.database.base import BaseModel, TenantScoped
 
 TICKET_PRIORITIES = ["low", "medium", "high", "urgent"]
 TICKET_STATUSES = ["open", "in_progress", "resolved", "closed"]
 
 
-class Ticket(BaseModel):
+class Ticket(TenantScoped, BaseModel):
     __tablename__ = "tickets"
 
-    number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    __table_args__ = (UniqueConstraint("tenant_id", "number", name="uq_tickets_tenant_number"),)
+
+    number: Mapped[str] = mapped_column(String(50), index=True)
     subject: Mapped[str] = mapped_column(String(255), index=True)
     description: Mapped[str | None] = mapped_column(Text)
     company_id: Mapped[str | None] = mapped_column(ForeignKey("companies.id"))

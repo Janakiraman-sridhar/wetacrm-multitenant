@@ -1,10 +1,10 @@
 from sqlalchemy import JSON, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database.base import BaseModel
+from app.database.base import BaseModel, TenantScoped
 
 
-class Company(BaseModel):
+class Company(TenantScoped, BaseModel):
     __tablename__ = "companies"
 
     name: Mapped[str] = mapped_column(String(255), index=True)

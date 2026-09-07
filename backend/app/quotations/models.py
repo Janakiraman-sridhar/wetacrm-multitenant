@@ -1,18 +1,20 @@
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import Date, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Date, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database.base import BaseModel
+from app.database.base import BaseModel, TenantScoped
 
 QUOTATION_STATUSES = ["draft", "sent", "accepted", "declined", "converted"]
 
 
-class Quotation(BaseModel):
+class Quotation(TenantScoped, BaseModel):
     __tablename__ = "quotations"
 
-    number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    __table_args__ = (UniqueConstraint("tenant_id", "number", name="uq_quotations_tenant_number"),)
+
+    number: Mapped[str] = mapped_column(String(50), index=True)
     company_id: Mapped[str | None] = mapped_column(ForeignKey("companies.id"))
     contact_id: Mapped[str | None] = mapped_column(ForeignKey("contacts.id"))
     deal_id: Mapped[str | None] = mapped_column(ForeignKey("deals.id"))
@@ -36,7 +38,7 @@ class Quotation(BaseModel):
     )
 
 
-class QuotationItem(BaseModel):
+class QuotationItem(TenantScoped, BaseModel):
     __tablename__ = "quotation_items"
 
     quotation_id: Mapped[str] = mapped_column(ForeignKey("quotations.id"), index=True)

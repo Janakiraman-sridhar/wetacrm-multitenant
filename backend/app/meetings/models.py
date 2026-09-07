@@ -3,12 +3,12 @@ from datetime import datetime
 from sqlalchemy import JSON, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database.base import BaseModel
+from app.database.base import BaseModel, TenantScoped
 
 EVENT_TYPES = ["meeting", "call", "follow_up", "reminder"]
 
 
-class Meeting(BaseModel):
+class Meeting(TenantScoped, BaseModel):
     __tablename__ = "meetings"
 
     title: Mapped[str] = mapped_column(String(255))
@@ -26,7 +26,7 @@ class Meeting(BaseModel):
     organizer = relationship("User", lazy="joined")
 
 
-class CalendarEvent(BaseModel):
+class CalendarEvent(TenantScoped, BaseModel):
     """Lightweight calendar items (calls, follow-ups, reminders).
 
     Meetings surface on the calendar too; the calendar API merges both.

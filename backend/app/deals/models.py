@@ -1,10 +1,10 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database.base import BaseModel
+from app.database.base import BaseModel, TenantScoped
 
 DEFAULT_STAGES = [
     # (name, order, probability, is_won, is_lost)
@@ -18,17 +18,19 @@ DEFAULT_STAGES = [
 ]
 
 
-class DealStage(BaseModel):
+class DealStage(TenantScoped, BaseModel):
     __tablename__ = "deal_stages"
 
-    name: Mapped[str] = mapped_column(String(100), unique=True)
+    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_deal_stages_tenant_name"),)
+
+    name: Mapped[str] = mapped_column(String(100), index=True)
     order: Mapped[int] = mapped_column(Integer, default=0)
     probability: Mapped[int] = mapped_column(Integer, default=0)
     is_won: Mapped[bool] = mapped_column(Boolean, default=False)
     is_lost: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
-class Deal(BaseModel):
+class Deal(TenantScoped, BaseModel):
     __tablename__ = "deals"
 
     title: Mapped[str] = mapped_column(String(255), index=True)

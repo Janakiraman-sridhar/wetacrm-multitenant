@@ -1,4 +1,7 @@
-"""Builds compact search documents and pushes them to Meilisearch (no-op without it)."""
+"""Builds compact search documents and pushes them to Meilisearch (no-op without it).
+
+Every document carries the owning `tenant_id`; `search_client` filters on it so a
+search can never surface another tenant's records."""
 
 from app.services.search_client import delete_document, index_document
 
@@ -6,6 +9,7 @@ from app.services.search_client import delete_document, index_document
 def _doc(entity, type_: str, title: str, subtitle: str = "", extra: str = "") -> dict:
     return {
         "id": entity.id,
+        "tenant_id": getattr(entity, "tenant_id", None),
         "type": type_,
         "title": title or "",
         "subtitle": subtitle or "",

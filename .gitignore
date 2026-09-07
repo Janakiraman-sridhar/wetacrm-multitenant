@@ -26,3 +26,8 @@ Thumbs.db
 
 # Docker volumes (local bind mounts)
 docker/data/
+
+# Test scratch and local backups
+*.db.bak
+*.pre-phase0.bak
+.pytest_cache/

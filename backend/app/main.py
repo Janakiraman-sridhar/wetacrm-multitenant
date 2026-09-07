@@ -8,11 +8,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import models_registry  # noqa: F401  (registers every table on Base.metadata)
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
-from app.database import seed
-from app.database.base import Base
-from app.database.ensure_schema import ensure_columns
-from app.database.session import SessionLocal, engine
+from app.core.middleware import TenantContextMiddleware
+from app.database.migrate import upgrade_to_head
+from app.database.session import SessionLocal
 from app.notifications.socket import capture_loop, sio
+from app.platform import service as platform_service
 
 from app.activities.router import router as activities_router
 from app.auth.router import router as auth_router
@@ -25,6 +25,7 @@ from app.io.router import router as io_router
 from app.leads.router import router as leads_router
 from app.meetings.router import router as meetings_router
 from app.notifications.router import router as notifications_router
+from app.platform.router import router as platform_router
 from app.products.router import router as products_router
 from app.projects.router import router as projects_router
 from app.quotations.router import router as quotations_router
@@ -41,10 +42,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     capture_loop()
-    Base.metadata.create_all(engine)
-    ensure_columns(engine)
+    if settings.auto_migrate:
+        upgrade_to_head()
     with SessionLocal() as db:
-        seed.run(db)
+        platform_service.bootstrap(db)
     yield
 
 
@@ -55,6 +56,10 @@ app = FastAPI(
     docs_url="/api/docs",
     openapi_url="/api/openapi.json",
 )
+
+# Puts the caller's tenant into context for the whole request. Added before the
+# CORS middleware so that CORS ends up outermost and still answers preflights.
+app.add_middleware(TenantContextMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -88,6 +93,7 @@ app.include_router(reports_router, prefix=API_V1)
 app.include_router(search_router, prefix=API_V1)
 app.include_router(settings_router, prefix=API_V1)
 app.include_router(io_router, prefix=API_V1)
+app.include_router(platform_router, prefix=API_V1)
 
 
 @app.get("/health")

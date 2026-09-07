@@ -1,20 +1,22 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database.base import BaseModel
+from app.database.base import BaseModel, TenantScoped
 
 LEAD_STATUSES = ["new", "contacted", "qualified", "unqualified", "converted"]
 
 
-class LeadSource(BaseModel):
+class LeadSource(TenantScoped, BaseModel):
     __tablename__ = "lead_sources"
 
-    name: Mapped[str] = mapped_column(String(100), unique=True)
+    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_lead_sources_tenant_name"),)
+
+    name: Mapped[str] = mapped_column(String(100), index=True)
 
 
-class Lead(BaseModel):
+class Lead(TenantScoped, BaseModel):
     __tablename__ = "leads"
 
     title: Mapped[str] = mapped_column(String(255), index=True)

@@ -12,6 +12,7 @@ import socketio
 
 from app.core.config import settings
 from app.core.security import decode_token
+from app.core.tenancy import current_tenant_id
 
 log = logging.getLogger("weta.socket")
 
@@ -31,13 +32,21 @@ async def connect(sid, environ, auth):
     payload = decode_token(token, "access")
     if not payload:
         raise socketio.exceptions.ConnectionRefusedError("authentication failed")
-    await sio.enter_room(sid, f"user:{payload['sub']}")
+    room = _room(payload.get("tid"), payload["sub"])
+    await sio.enter_room(sid, room)
+
+
+def _room(tenant_id: str | None, user_id: str) -> str:
+    """Rooms are namespaced by tenant so a user id colliding across tenants cannot
+    receive another tenant's events."""
+    return f"tenant:{tenant_id or 'none'}:user:{user_id}"
 
 
 def emit_to_user(user_id: str, event: str, data: dict) -> None:
     if _loop is None or _loop.is_closed():
         return
+    room = _room(current_tenant_id(), user_id)
     try:
-        asyncio.run_coroutine_threadsafe(sio.emit(event, data, room=f"user:{user_id}"), _loop)
+        asyncio.run_coroutine_threadsafe(sio.emit(event, data, room=room), _loop)
     except RuntimeError:
         log.debug("Socket emit skipped; event loop unavailable")

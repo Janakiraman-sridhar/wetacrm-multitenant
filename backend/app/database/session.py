@@ -16,3 +16,9 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# Importing this registers the session-level events that enforce tenant
+# isolation. It lives here so *any* code path that opens a session gets them,
+# rather than depending on main.py import order.
+from app.core import tenancy  # noqa: E402,F401  (import for side effects)

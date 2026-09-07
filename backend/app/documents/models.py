@@ -1,10 +1,10 @@
 from sqlalchemy import ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database.base import BaseModel
+from app.database.base import BaseModel, TenantScoped
 
 
-class Document(BaseModel):
+class Document(TenantScoped, BaseModel):
     __tablename__ = "documents"
 
     name: Mapped[str] = mapped_column(String(255), index=True)

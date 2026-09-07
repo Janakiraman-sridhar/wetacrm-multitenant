@@ -36,7 +36,8 @@ class UserOut(ORMModel):
     theme: str
     last_login_at: datetime | None = None
     created_at: datetime
-    role: RoleOut
+    # Null for a platform Super Admin, who has no tenant role.
+    role: RoleOut | None = None
 
 
 class UserCreate(ORMModel):

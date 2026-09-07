@@ -1,18 +1,20 @@
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import Date, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Date, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database.base import BaseModel
+from app.database.base import BaseModel, TenantScoped
 
 INVOICE_STATUSES = ["draft", "sent", "partial", "paid", "overdue", "cancelled"]
 
 
-class Invoice(BaseModel):
+class Invoice(TenantScoped, BaseModel):
     __tablename__ = "invoices"
 
-    number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    __table_args__ = (UniqueConstraint("tenant_id", "number", name="uq_invoices_tenant_number"),)
+
+    number: Mapped[str] = mapped_column(String(50), index=True)
     quotation_id: Mapped[str | None] = mapped_column(ForeignKey("quotations.id"))
     company_id: Mapped[str | None] = mapped_column(ForeignKey("companies.id"))
     contact_id: Mapped[str | None] = mapped_column(ForeignKey("contacts.id"))
@@ -36,7 +38,7 @@ class Invoice(BaseModel):
     )
 
 
-class InvoiceItem(BaseModel):
+class InvoiceItem(TenantScoped, BaseModel):
     __tablename__ = "invoice_items"
 
     invoice_id: Mapped[str] = mapped_column(ForeignKey("invoices.id"), index=True)

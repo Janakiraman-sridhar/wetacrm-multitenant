@@ -106,27 +106,20 @@ DEFAULT_SETTINGS = {
 }
 
 
-def run(db: Session) -> None:
+def run(db: Session, tenant_id: str) -> None:
+    """Seed one tenant's baseline data. Idempotent — safe to call on every boot.
+
+    Phase 1 replaces this with template-driven provisioning; until then it is the
+    single place a new tenant's roles, stages, sources, settings and email
+    templates come from. All queries below run inside the caller's tenant scope,
+    so `existing_*` checks are naturally per-tenant.
+    """
     # Roles
     existing_roles = {r.name for r in db.scalars(select(Role)).all()}
     for name, spec in DEFAULT_ROLES.items():
         if name not in existing_roles:
             db.add(Role(name=name, description=spec["description"], permissions=spec["permissions"], is_system=True))
     db.flush()
-
-    # First admin user
-    if not db.scalar(select(User).limit(1)):
-        super_admin = db.scalar(select(Role).where(Role.name == "Super Admin"))
-        db.add(
-            User(
-                email=settings.admin_email,
-                password_hash=hash_password(settings.admin_password),
-                first_name="Super",
-                last_name="Admin",
-                role_id=super_admin.id,
-            )
-        )
-        log.warning("Seeded initial Super Admin user: %s (change the password!)", settings.admin_email)
 
     # Deal stages
     if not db.scalar(select(DealStage).limit(1)):

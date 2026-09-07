@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     jwt_secret: str = "dev-secret-change-in-production"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
+    impersonation_token_expire_minutes: int = 60
     cors_origins: str = "http://localhost:5173"
     # Public URL of the frontend app, used in emails (welcome, password reset).
     # Falls back to the first CORS origin when left blank.
@@ -20,6 +21,19 @@ class Settings(BaseSettings):
 
     admin_email: str = "admin@wetacrm.com"
     admin_password: str = "admin123"
+
+    # Platform Super Admin — the account that creates and manages tenants.
+    # Distinct from a tenant's own "Super Admin" role.
+    platform_admin_email: str = "superadmin@wetacrm.com"
+    platform_admin_password: str = "superadmin123"
+
+    # Name and slug of the tenant that existing single-tenant data is migrated into.
+    default_tenant_name: str = "Default Workspace"
+    default_tenant_slug: str = "default"
+
+    # Run `alembic upgrade head` automatically on startup. Convenient in dev;
+    # turn off in production if migrations are applied by the deploy pipeline.
+    auto_migrate: bool = True
 
     redis_url: str = ""
     meili_url: str = ""

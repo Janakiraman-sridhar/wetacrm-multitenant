@@ -3,13 +3,13 @@ from datetime import datetime
 from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database.base import BaseModel
+from app.database.base import BaseModel, TenantScoped
 
 TASK_PRIORITIES = ["low", "medium", "high", "urgent"]
 TASK_STATUSES = ["todo", "in_progress", "done", "cancelled"]
 
 
-class Task(BaseModel):
+class Task(TenantScoped, BaseModel):
     __tablename__ = "tasks"
 
     title: Mapped[str] = mapped_column(String(255), index=True)
@@ -26,7 +26,7 @@ class Task(BaseModel):
     created_by = relationship("User", foreign_keys=[created_by_id], lazy="joined")
 
 
-class Comment(BaseModel):
+class Comment(TenantScoped, BaseModel):
     __tablename__ = "comments"
 
     body: Mapped[str] = mapped_column(Text)

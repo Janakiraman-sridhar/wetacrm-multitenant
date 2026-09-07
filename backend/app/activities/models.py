@@ -1,12 +1,12 @@
 from sqlalchemy import JSON, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database.base import BaseModel
+from app.database.base import BaseModel, TenantScoped
 
 ACTIVITY_TYPES = ["email", "call", "meeting", "note", "status_change", "assignment", "system"]
 
 
-class Activity(BaseModel):
+class Activity(TenantScoped, BaseModel):
     """Timeline entry attached to any entity (lead, deal, company, ...)."""
 
     __tablename__ = "activities"
@@ -22,7 +22,7 @@ class Activity(BaseModel):
     user = relationship("User", lazy="joined")
 
 
-class AuditLog(BaseModel):
+class AuditLog(TenantScoped, BaseModel):
     __tablename__ = "audit_logs"
 
     user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))

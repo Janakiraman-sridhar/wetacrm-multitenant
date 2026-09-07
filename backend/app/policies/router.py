@@ -378,6 +378,24 @@ def delete_policy(
     number = policy.policy_number
     if policy.renewed_to_id:
         raise AppError("This policy has been renewed; delete the renewal first", 409)
+
+    # Deleting a renewal has to unlink the policy it replaced, or that one is left
+    # pointing at a row that no longer exists — permanently un-deletable and
+    # un-renewable, stuck in `renewed` with nothing to show for it.
+    if policy.renewal_of_id:
+        previous = db.get(Policy, policy.renewal_of_id)
+        if previous is not None:
+            previous.renewed_to_id = None
+            # `derive_status` treats `renewed` as terminal and leaves it alone, so the
+            # policy has to come out of that state before its date can decide again.
+            if previous.status == "renewed":
+                previous.status = "active"
+            previous.status = service.derive_status(previous)
+            log_activity(
+                db, "policy", previous.id, "status_change",
+                f"Renewal {number} was deleted; this policy is active again", user_id=user.id,
+            )
+
     db.delete(policy)
     audit(db, user.id, "delete", "policy", policy_id, {"number": number})
     db.commit()

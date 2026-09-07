@@ -13,7 +13,7 @@ Two rules shape everything here:
 
 import logging
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -74,7 +74,14 @@ def compute_premium(net: Decimal | None, gst: Decimal | None, gross: Decimal | N
     if gst is None and net is not None and gross is not None:
         gst = gross - net
 
-    return (net or Decimal(0), gst or Decimal(0), gross or Decimal(0))
+    # Quantised to match the Numeric(14, 2) columns, so the create response carries
+    # the same value a later read does — otherwise a client formatting currency sees
+    # "5900" on save and "5900.00" on reload.
+    return tuple(_money(value) for value in (net, gst, gross))
+
+
+def _money(value: Decimal | None) -> Decimal:
+    return (value or Decimal(0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 # --- status -------------------------------------------------------------------

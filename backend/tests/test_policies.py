@@ -401,3 +401,58 @@ def test_policies_support_custom_fields(client, alpha, customer, masters):
     finally:
         client.delete(f"{API}/policies/{policy['id']}", headers=alpha.auth())
         client.delete(f"{API}/schema/policies/fields/endorsement_no", headers=alpha.auth())
+
+
+def test_created_premium_matches_what_a_later_read_returns(client, alpha, customer, masters):
+    """The create response and a subsequent GET must agree.
+
+    Derived premiums used to come back unquantised ("5900") on create and
+    column-normalised ("5900.00") on read — the same number, two shapes, which a
+    client formatting currency notices.
+    """
+    policy = make_policy(
+        client, alpha, customer, masters, suffix="QUANT",
+        premium_net="5000", premium_gst="900", premium_gross=None,
+    )
+    try:
+        fetched = client.get(f"{API}/policies/{policy['id']}", headers=alpha.auth()).json()
+        for field in ("premium_net", "premium_gst", "premium_gross"):
+            assert str(policy[field]) == str(fetched[field]), (
+                f"{field}: create returned {policy[field]!r}, read returned {fetched[field]!r}"
+            )
+        assert str(policy["premium_gross"]) == "5900.00"
+    finally:
+        client.delete(f"{API}/policies/{policy['id']}", headers=alpha.auth())
+
+
+def test_deleting_a_renewal_unlinks_the_policy_it_replaced(client, alpha, customer, masters):
+    """Otherwise the previous policy points at a row that no longer exists.
+
+    It is then stuck: `renewed` forever, un-deletable because `renewed_to_id` is set,
+    and un-renewable for the same reason.
+    """
+    original = make_policy(
+        client, alpha, customer, masters, suffix="UNLINK",
+        expiry_date=str(date.today() + timedelta(days=20)),
+    )
+    start = date.today() + timedelta(days=21)
+    renewal = client.post(
+        f"{API}/policies/{original['id']}/renew",
+        json={"policy_number": "POL-UNLINK-2", "start_date": str(start),
+              "expiry_date": str(start + timedelta(days=364))},
+        headers=alpha.auth(),
+    ).json()
+
+    assert client.delete(f"{API}/policies/{renewal['id']}", headers=alpha.auth()).status_code == 200
+
+    after = client.get(f"{API}/policies/{original['id']}", headers=alpha.auth()).json()
+    assert after["renewed_to_id"] is None, "previous policy still points at the deleted renewal"
+    # Its status is re-derived, so it returns to the renewal desk rather than
+    # sitting as `renewed` with nothing to show for it.
+    assert after["status"] == "expiring"
+
+    due = client.get(f"{API}/policies/renewals", headers=alpha.auth()).json()
+    assert "POL-UNLINK" in {p["policy_number"] for p in due}
+
+    # And it can now be deleted, which it could not before.
+    assert client.delete(f"{API}/policies/{original['id']}", headers=alpha.auth()).status_code == 200

@@ -111,13 +111,22 @@ def _apply_modules(db: Session, config: TemplateConfig) -> None:
 
     Every module gets a row — including disabled ones — so a tenant admin can switch
     one on later without needing to know the catalog.
+
+    **A template that names any modules is treated as naming all of them**: anything
+    it leaves out is off. Listing the seven modules a client should have and silently
+    getting the other ten as well is not what anyone means. A template with no module
+    list at all still gets everything, which is what "unconfigured" should do.
     """
     existing = {m.module_key: m for m in db.scalars(select(TenantModule)).all()}
     overrides = config.module_map()
+    selective = bool(overrides)
 
     for definition in MODULE_CATALOG:
         override = overrides.get(definition.key)
-        enabled = True if override is None else override.enabled
+        if override is not None:
+            enabled = override.enabled
+        else:
+            enabled = not selective
         if definition.locked:
             enabled = True  # dashboard and settings cannot be switched off
         label = (override.label if override and override.label else definition.label)

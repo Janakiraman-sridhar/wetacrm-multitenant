@@ -294,3 +294,221 @@ def test_apply_template_is_additive_and_keeps_customisations(client, admin_heade
     assert "Bank channel" in sources
     roles = {r["name"] for r in client.get(f"{API}/roles", headers=own).json()}
     assert "Back Office" in roles
+
+
+# --- customising a template ---------------------------------------------------
+
+def test_a_system_template_cannot_be_edited(client, admin_headers):
+    """It is refreshed from the product, so an edit would be silently overwritten."""
+    resp = client.patch(
+        f"{API}/platform/templates/general_crm",
+        json={"lead_sources": ["Only this"]},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 400
+    assert "Clone" in resp.json()["detail"]
+
+
+def test_a_cloned_template_can_be_customised(client, admin_headers):
+    client.post(
+        f"{API}/platform/templates/insurance_agent/clone",
+        json={"key": "custom_agency", "name": "Custom Agency"},
+        headers=admin_headers,
+    )
+    try:
+        resp = client.patch(
+            f"{API}/platform/templates/custom_agency",
+            json={
+                "name": "Custom Agency v2",
+                "modules": [
+                    {"key": "contacts", "enabled": True, "label": "Members", "order": 2},
+                    {"key": "policies", "enabled": True, "label": "Cover", "order": 3},
+                    {"key": "projects", "enabled": False, "label": "Projects", "order": 9},
+                ],
+                "lead_sources": ["Roadshow", "Referral"],
+                "stages": [
+                    {"name": "Enquiry", "order": 1, "probability": 10},
+                    {"name": "Closed", "order": 2, "probability": 100, "is_won": True},
+                ],
+            },
+            headers=admin_headers,
+        )
+        assert resp.status_code == 200, resp.text
+        config = resp.json()["config"]
+        assert resp.json()["name"] == "Custom Agency v2"
+        assert {m["key"]: m["label"] for m in config["modules"]}["contacts"] == "Members"
+        assert config["lead_sources"] == ["Roadshow", "Referral"]
+
+        # And a workspace made from it comes out that way.
+        client.post(
+            f"{API}/platform/tenants",
+            json={
+                "name": "Built From Custom", "owner_email": "owner-custom@example.com",
+                "owner_password": "custom-pass-12", "template_key": "custom_agency",
+            },
+            headers=admin_headers,
+        )
+        token = client.post(
+            f"{API}/auth/login",
+            json={"email": "owner-custom@example.com", "password": "custom-pass-12"},
+        ).json()["access_token"]
+        own = {"Authorization": f"Bearer {token}"}
+
+        labels = {m["module_key"]: m["label"] for m in client.get(f"{API}/modules", headers=own).json()}
+        assert labels["contacts"] == "Members"
+        assert labels["policies"] == "Cover"
+        sources = {s["name"] for s in client.get(f"{API}/leads/sources", headers=own).json()}
+        assert sources == {"Roadshow", "Referral"}
+        stages = [s["name"] for s in client.get(f"{API}/deals/stages", headers=own).json()]
+        assert stages == ["Enquiry", "Closed"]
+    finally:
+        pass
+
+
+def test_an_invalid_edit_is_rejected_rather_than_stored(client, admin_headers):
+    """A typo'd module key would produce a workspace nobody notices is broken."""
+    client.post(
+        f"{API}/platform/templates/general_crm/clone",
+        json={"key": "bad_edit", "name": "Bad Edit"},
+        headers=admin_headers,
+    )
+    resp = client.patch(
+        f"{API}/platform/templates/bad_edit",
+        json={"modules": [{"key": "spaceships", "enabled": True}]},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 400
+    assert "Unknown module" in resp.json()["detail"]
+
+    # The stored template is untouched.
+    after = client.get(f"{API}/platform/templates/bad_edit", headers=admin_headers).json()
+    assert all(m["key"] != "spaceships" for m in after["config"]["modules"])
+
+
+def test_editing_a_template_leaves_existing_tenants_alone(client, admin_headers):
+    """Templates are copied at provisioning; a later edit must not reach back."""
+    client.post(
+        f"{API}/platform/templates/general_crm/clone",
+        json={"key": "drift_check", "name": "Drift Check"},
+        headers=admin_headers,
+    )
+    client.post(
+        f"{API}/platform/tenants",
+        json={
+            "name": "Drift Tenant", "owner_email": "owner-drift@example.com",
+            "owner_password": "drift-pass-123", "template_key": "drift_check",
+        },
+        headers=admin_headers,
+    )
+    token = client.post(
+        f"{API}/auth/login", json={"email": "owner-drift@example.com", "password": "drift-pass-123"}
+    ).json()["access_token"]
+    own = {"Authorization": f"Bearer {token}"}
+    before = {m["module_key"]: m["label"] for m in client.get(f"{API}/modules", headers=own).json()}
+
+    client.patch(
+        f"{API}/platform/templates/drift_check",
+        json={"modules": [{"key": "contacts", "enabled": True, "label": "Renamed Later"}]},
+        headers=admin_headers,
+    )
+
+    after = {m["module_key"]: m["label"] for m in client.get(f"{API}/modules", headers=own).json()}
+    assert after["contacts"] == before["contacts"] != "Renamed Later"
+
+
+def test_the_module_catalog_is_served(client, admin_headers):
+    """The editor offers exactly the keys the backend accepts."""
+    resp = client.get(f"{API}/platform/module-catalog", headers=admin_headers)
+    assert resp.status_code == 200
+    catalog = {m["key"]: m for m in resp.json()}
+    assert {"dashboard", "contacts", "policies", "settings"} <= set(catalog)
+    assert catalog["settings"]["locked"] is True
+
+
+# --- deleting a tenant --------------------------------------------------------
+
+def test_a_tenant_can_be_deleted_and_its_users_lose_access(client, admin_headers):
+    created = client.post(
+        f"{API}/platform/tenants",
+        json={
+            "name": "Doomed Agency", "owner_email": "owner-doomed@example.com",
+            "owner_password": "doomed-pass-12", "template_key": "general_crm",
+        },
+        headers=admin_headers,
+    ).json()
+
+    signed_in = client.post(
+        f"{API}/auth/login", json={"email": "owner-doomed@example.com", "password": "doomed-pass-12"}
+    )
+    assert signed_in.status_code == 200
+
+    deleted = client.delete(f"{API}/platform/tenants/{created['id']}", headers=admin_headers)
+    assert deleted.status_code == 200, deleted.text
+
+    # Signing in is refused once the workspace is gone.
+    after = client.post(
+        f"{API}/auth/login", json={"email": "owner-doomed@example.com", "password": "doomed-pass-12"}
+    )
+    assert after.status_code == 403
+
+    # And it drops out of the console listing.
+    listed = client.get(f"{API}/platform/tenants", headers=admin_headers).json()
+    assert created["id"] not in {t["id"] for t in listed}
+
+
+def test_the_default_workspace_cannot_be_deleted(client, admin_headers):
+    """It holds the data everything migrated into; removing it is never intended."""
+    tenants = client.get(f"{API}/platform/tenants", headers=admin_headers).json()
+    default = next((t for t in tenants if t["slug"] == "default"), None)
+    if default is None:
+        return  # the test database has no default workspace
+    resp = client.delete(f"{API}/platform/tenants/{default['id']}", headers=admin_headers)
+    assert resp.status_code == 400
+
+
+def test_a_tenant_user_cannot_delete_their_own_workspace(client, alpha):
+    resp = client.delete(f"{API}/platform/tenants/{alpha.tenant_id}", headers=alpha.auth())
+    assert resp.status_code == 403
+
+
+def test_a_template_that_names_modules_is_treated_as_naming_all_of_them(client, admin_headers):
+    """Listing the modules a client should have must not silently add the rest.
+
+    An admin who lists seven modules means seven, not seven plus whatever the
+    catalog happens to contain.
+    """
+    client.post(
+        f"{API}/platform/templates/general_crm/clone",
+        json={"key": "selective", "name": "Selective"},
+        headers=admin_headers,
+    )
+    resp = client.patch(
+        f"{API}/platform/templates/selective",
+        json={"modules": [
+            {"key": "dashboard", "enabled": True, "label": "Home", "order": 1},
+            {"key": "contacts", "enabled": True, "label": "Clients", "order": 2},
+            {"key": "settings", "enabled": True, "label": "Settings", "order": 3},
+        ]},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 200, resp.text
+
+    client.post(
+        f"{API}/platform/tenants",
+        json={
+            "name": "Selective Co", "owner_email": "owner-selective@example.com",
+            "owner_password": "selective-pass1", "template_key": "selective",
+        },
+        headers=admin_headers,
+    )
+    token = client.post(
+        f"{API}/auth/login",
+        json={"email": "owner-selective@example.com", "password": "selective-pass1"},
+    ).json()["access_token"]
+    own = {"Authorization": f"Bearer {token}"}
+
+    enabled = {m["module_key"] for m in client.get(f"{API}/modules", headers=own).json()}
+    assert enabled == {"dashboard", "contacts", "settings"}, f"got {sorted(enabled)}"
+    # The rows still exist, so the tenant admin can switch one on later.
+    everything = client.get(f"{API}/modules", params={"enabled_only": False}, headers=own).json()
+    assert len(everything) > 3

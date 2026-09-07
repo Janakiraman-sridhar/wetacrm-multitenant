@@ -45,7 +45,7 @@ cd backend && .venv/Scripts/python.exe -m pytest          # all
 ```
 
 `backend/tests/` holds the tenant-isolation (Phase 0), template/provisioning (Phase 1)
-custom-field (Phase 2), customer-PII (Phase 3), policy (Phase 4) and poster/WhatsApp (Phase 5) suites — 212 tests. Install
+custom-field (Phase 2), customer-PII (Phase 3), policy (Phase 4) and poster/WhatsApp (Phase 5) suites — 221 tests. Install
 test deps with `pip install -r requirements-dev.txt`. There is no frontend test suite;
 `npm run build` (which runs `tsc -b`) is the only typecheck gate.
 
@@ -123,6 +123,12 @@ stages, lead sources, tags, settings and email templates.
   change, a tenant created from it must still behave like the old app.
 - `insurance_agent.json` renames Contacts to Customers, Leads to Enquiries, swaps in an
   enquiry-to-policy pipeline, and switches off Companies/Invoices/Projects/Support.
+- A template that names **any** modules is treated as naming **all** of them: anything
+  it leaves out is disabled. Listing seven modules and silently getting the other ten
+  is not what anyone means. A template with no module list gets everything.
+- Custom templates are editable (`PATCH /platform/templates/{key}`); system ones are
+  refused, because they are refreshed from the bundled JSON and an edit would be
+  overwritten. The edited config is re-validated before storing.
 - Templates are **copied into a tenant at provisioning, never referenced live**, so
   editing one cannot change a running tenant. `POST /platform/tenants/{id}/apply-template`
   is the deliberate exception, and is additive only.

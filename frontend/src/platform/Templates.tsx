@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { Copy, Lock, Trash2 } from "lucide-react";
+import { Copy, Lock, Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { Modal } from "@/components/Modal";
 import { useToast } from "@/context/ToastContext";
 import { api, errorMessage } from "@/lib/api";
+import { TemplateEditor } from "@/platform/TemplateEditor";
 import type { CrmTemplate, CrmTemplateDetail } from "@/types";
 
 export default function Templates() {
@@ -13,6 +14,7 @@ export default function Templates() {
   const queryClient = useQueryClient();
   const [cloning, setCloning] = useState<CrmTemplate | null>(null);
   const [inspecting, setInspecting] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
   const [cloneForm, setCloneForm] = useState({ key: "", name: "", description: "" });
 
   const templates = useQuery({
@@ -103,7 +105,18 @@ export default function Templates() {
             </dl>
 
             <div className="mt-4 flex gap-2">
-              <button className="btn-secondary flex-1" onClick={() => setInspecting(template.key)}>
+              <button
+                className={template.is_system ? "btn-secondary flex-1" : "btn-primary flex-1"}
+                onClick={() => setEditing(template.key)}
+                title={
+                  template.is_system
+                    ? "System templates are read-only — you will be offered a clone"
+                    : "Change which modules a new client gets, and what they are called"
+                }
+              >
+                <Pencil size={14} /> Customise
+              </button>
+              <button className="btn-secondary" onClick={() => setInspecting(template.key)}>
                 Inspect
               </button>
               <button className="btn-secondary" onClick={() => openClone(template)} title="Clone to customise">
@@ -122,6 +135,24 @@ export default function Templates() {
           </div>
         ))}
       </div>
+
+      <Modal
+        open={!!editing}
+        onClose={() => setEditing(null)}
+        title={`Customise ${templates.data?.find((t) => t.key === editing)?.name ?? ""}`}
+        wide
+      >
+        {editing && (
+          <TemplateEditor
+            templateKey={editing}
+            onClone={() => {
+              const source = templates.data?.find((t) => t.key === editing);
+              setEditing(null);
+              if (source) openClone(source);
+            }}
+          />
+        )}
+      </Modal>
 
       <Modal open={!!cloning} onClose={() => setCloning(null)} title={`Clone ${cloning?.name ?? ""}`}>
         <div className="space-y-4">

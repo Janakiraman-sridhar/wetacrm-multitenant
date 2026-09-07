@@ -8,7 +8,7 @@ import { Modal } from "@/components/Modal";
 import { Select } from "@/components/Select";
 import { useToast } from "@/context/ToastContext";
 import { api, errorMessage } from "@/lib/api";
-import { startImpersonation } from "@/lib/impersonation";
+import { useOpenWorkspace } from "@/platform/useImpersonation";
 import { formatDate } from "@/lib/format";
 import type { CrmTemplate, PlatformStats, Tenant, TenantDetail } from "@/types";
 
@@ -74,15 +74,7 @@ export default function Tenants() {
     onError: (err) => toast(errorMessage(err), "error"),
   });
 
-  const impersonate = useMutation({
-    mutationFn: async (tenant: Tenant) =>
-      (await api.post(`/platform/tenants/${tenant.id}/impersonate`, {})).data,
-    onSuccess: (data) => {
-      startImpersonation(data.access_token, data.tenant.id, data.tenant.name, data.acting_as_email);
-      window.location.href = "/";
-    },
-    onError: (err) => toast(errorMessage(err), "error"),
-  });
+  const openWorkspace = useOpenWorkspace();
 
   const rows = useMemo(() => {
     const list = tenants.data ?? [];
@@ -108,7 +100,10 @@ export default function Tenants() {
         <div>
           <h1 className="text-xl font-semibold">Tenants</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            Each tenant is one client workspace with its own isolated data.
+            Each tenant is one client workspace with its own isolated data. Your platform
+            account holds no client data of its own — use{" "}
+            <strong className="text-slate-600 dark:text-slate-300">Open workspace</strong> to go
+            inside one. That session is time-limited and recorded against your account.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -181,15 +176,20 @@ export default function Tenants() {
                   <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{formatDate(tenant.created_at)}</td>
                   <td className="px-4 py-3 text-right">
                     <button
-                      className="btn-secondary !py-1.5"
-                      title="Open this workspace as one of its users"
-                      disabled={impersonate.isPending || tenant.status === "suspended"}
+                      className="btn-primary !py-1.5"
+                      title={
+                        tenant.status === "suspended"
+                          ? "Reactivate this workspace before opening it"
+                          : "Sign in to this workspace as one of its users. Time-limited and audited."
+                      }
+                      disabled={openWorkspace.isPending || tenant.status === "suspended"}
                       onClick={(e) => {
                         e.stopPropagation();
-                        impersonate.mutate(tenant);
+                        openWorkspace.mutate(tenant.id);
                       }}
                     >
-                      <LogIn size={14} /> Open
+                      <LogIn size={14} />
+                      {openWorkspace.isPending ? "Opening…" : "Open workspace"}
                     </button>
                   </td>
                 </tr>

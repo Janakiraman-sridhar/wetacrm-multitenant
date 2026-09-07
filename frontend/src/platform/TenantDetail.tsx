@@ -1,15 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { ArrowLeft, GripVertical, LogIn, Lock, Pause, Play, Save } from "lucide-react";
+import { ArrowLeft, GripVertical, LogIn, Lock, Pause, Play, Save, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { ConfirmDialog } from "@/components/Modal";
+import { ConfirmDialog, Modal } from "@/components/Modal";
 import { useToast } from "@/context/ToastContext";
 import { api, errorMessage } from "@/lib/api";
 import { formatDate } from "@/lib/format";
-import { startImpersonation } from "@/lib/impersonation";
 import { moduleIcon } from "@/lib/modules";
+import { useOpenWorkspace } from "@/platform/useImpersonation";
 import type { CrmTemplate, TenantDetail as TenantDetailType, TenantModule } from "@/types";
 
 export default function TenantDetail() {
@@ -19,6 +19,9 @@ export default function TenantDetail() {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<TenantModule[]>([]);
   const [confirmSuspend, setConfirmSuspend] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  // Typing the name is the guard: a delete is not something to reach by mis-click.
+  const [confirmName, setConfirmName] = useState("");
 
   const tenant = useQuery({
     queryKey: ["platform", "tenant", tenantId],
@@ -68,11 +71,14 @@ export default function TenantDetail() {
     onError: (err) => toast(errorMessage(err), "error"),
   });
 
-  const impersonate = useMutation({
-    mutationFn: async () => (await api.post(`/platform/tenants/${tenantId}/impersonate`, {})).data,
-    onSuccess: (data) => {
-      startImpersonation(data.access_token, data.tenant.id, data.tenant.name, data.acting_as_email);
-      window.location.href = "/";
+  const openWorkspace = useOpenWorkspace();
+
+  const removeTenant = useMutation({
+    mutationFn: async () => (await api.delete(`/platform/tenants/${tenantId}`)).data,
+    onSuccess: () => {
+      toast("Tenant deleted");
+      queryClient.invalidateQueries({ queryKey: ["platform"] });
+      navigate("/platform");
     },
     onError: (err) => toast(errorMessage(err), "error"),
   });
@@ -102,12 +108,16 @@ export default function TenantDetail() {
           </div>
           <div className="flex items-center gap-2">
             <button
-              className="btn-secondary"
-              disabled={impersonate.isPending || t.status === "suspended"}
-              onClick={() => impersonate.mutate()}
-              title="Open this workspace as one of its users. Time-limited and audited."
+              className="btn-primary"
+              disabled={openWorkspace.isPending || t.status === "suspended"}
+              onClick={() => openWorkspace.mutate(tenantId)}
+              title={
+                t.status === "suspended"
+                  ? "Reactivate this workspace before opening it"
+                  : "Sign in to this workspace as one of its users. Time-limited and audited."
+              }
             >
-              <LogIn size={15} /> Open workspace
+              <LogIn size={15} /> {openWorkspace.isPending ? "Opening…" : "Open workspace"}
             </button>
             {t.status === "suspended" ? (
               <button className="btn-primary" onClick={() => setStatus.mutate("reactivate")}>
@@ -185,6 +195,59 @@ export default function TenantDetail() {
           {draft.length === 0 && <p className="py-6 text-center text-sm text-slate-400">No modules configured.</p>}
         </div>
       </section>
+
+      <section className="card border-red-200 p-5 dark:border-red-900/60">
+        <h2 className="font-semibold text-red-700 dark:text-red-400">Delete this tenant</h2>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          Their users lose access immediately and the workspace disappears from the console.
+          The data is retained for 30 days before it is purged, so this can be undone by
+          contacting support within that window — but not from here.
+        </p>
+        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+          Suspending is usually what you want: it blocks sign-in and keeps everything intact.
+        </p>
+        <button
+          className="btn-danger mt-3"
+          disabled={removeTenant.isPending}
+          onClick={() => {
+            setConfirmName("");
+            setConfirmDelete(true);
+          }}
+        >
+          <Trash2 size={15} /> Delete {t.name}
+        </button>
+      </section>
+
+      <Modal open={confirmDelete} onClose={() => setConfirmDelete(false)} title={`Delete ${t.name}?`}>
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            This removes the workspace and signs out its {t.user_count} user
+            {t.user_count === 1 ? "" : "s"}. Type the workspace name to confirm.
+          </p>
+          <div>
+            <label className="label">Workspace name</label>
+            <input
+              className="input"
+              placeholder={t.name}
+              value={confirmName}
+              onChange={(e) => setConfirmName(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button className="btn-secondary" onClick={() => setConfirmDelete(false)}>
+              Cancel
+            </button>
+            <button
+              className="btn-danger"
+              disabled={confirmName.trim() !== t.name || removeTenant.isPending}
+              onClick={() => removeTenant.mutate()}
+            >
+              {removeTenant.isPending ? "Deleting…" : "Delete permanently"}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <ConfirmDialog
         open={confirmSuspend}

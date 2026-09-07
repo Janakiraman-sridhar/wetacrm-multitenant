@@ -21,9 +21,11 @@ from app.platform import provisioning, service
 from app.platform.catalog import MODULES_BY_KEY
 from app.platform.models import CrmTemplate, Tenant, TenantModule
 from app.platform.modules_router import list_tenant_modules
+from app.platform.template_schema import TemplateError, parse_template
 from app.platform.schemas import (
     ImpersonateIn, ImpersonateOut, PlatformStatsOut, TemplateClone, TemplateDetailOut,
-    TemplateOut, TenantCreate, TenantDetailOut, TenantModuleUpdate, TenantOut, TenantUpdate,
+    TemplateOut, TemplateUpdate, TenantCreate, TenantDetailOut, TenantModuleUpdate,
+    TenantOut, TenantUpdate,
 )
 from app.users.models import Role, User
 
@@ -433,3 +435,78 @@ def apply_template_to_tenant(
         )
         db.commit()
     return {"detail": f"Template '{config.name}' applied"}
+
+
+@router.patch("/templates/{key}", response_model=TemplateDetailOut)
+def update_template(
+    key: str,
+    payload: TemplateUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_platform_admin),
+):
+    """Customise a template.
+
+    System templates are refreshed from the bundled JSON whenever their version
+    increases, so an edit to one would be silently overwritten. Cloning first is
+    therefore required rather than merely advised, and the error says so.
+
+    The edited config is re-validated before it is stored: a template with a typo'd
+    module key or an unknown permission would otherwise produce a subtly broken
+    workspace that nobody notices until the client does.
+    """
+    with platform_scope():
+        row = db.scalar(select(CrmTemplate).where(CrmTemplate.key == key))
+        if row is None:
+            raise NotFoundError("Template")
+        if row.is_system:
+            raise AppError(
+                "System templates cannot be edited — they are refreshed from the product "
+                "and your changes would be overwritten. Clone this one first.",
+                400,
+            )
+
+        config = dict(row.config or {})
+        data = payload.model_dump(exclude_unset=True)
+        for field in ("modules", "stages", "lead_sources", "tags", "settings"):
+            if field in data and data[field] is not None:
+                config[field] = data[field]
+        if data.get("name"):
+            config["name"] = data["name"]
+            row.name = data["name"]
+        if "description" in data:
+            config["description"] = data["description"]
+            row.description = data["description"]
+
+        try:
+            parse_template(config)
+        except TemplateError as exc:
+            raise AppError(f"That template would not be valid: {exc}", 400)
+
+        row.config = config
+        row.version = (row.version or 1) + 1
+        service.platform_audit(
+            db, admin.id, "template.update", None,
+            {"key": key, "changed": sorted(data)}, _client_ip(request),
+        )
+        db.commit()
+
+    result = _template_summary(row)
+    result["config"] = row.config
+    return result
+
+
+@router.get("/module-catalog")
+def module_catalog(admin: User = Depends(get_platform_admin)):
+    """Every module a template may enable, with its default label.
+
+    Served rather than duplicated in the frontend so the template editor cannot
+    offer a module key the backend would reject.
+    """
+    from app.platform.catalog import MODULE_CATALOG
+
+    return [
+        {"key": m.key, "label": m.label, "order": m.order,
+         "icon": m.icon, "locked": m.locked, "permission": m.permission}
+        for m in MODULE_CATALOG
+    ]

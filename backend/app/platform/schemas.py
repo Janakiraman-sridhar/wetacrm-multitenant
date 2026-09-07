@@ -97,3 +97,20 @@ class TenantModuleUpdate(BaseModel):
     label: str | None = Field(default=None, min_length=1, max_length=100)
     enabled: bool | None = None
     order: int | None = None
+
+
+class TemplateUpdate(BaseModel):
+    """Edit a custom template.
+
+    Only the sections a platform admin realistically changes — modules and their
+    labels, pipeline stages, lead sources, tags. Roles and settings are left to the
+    JSON so a mis-edit cannot lock a workspace out of its own permissions.
+    """
+
+    name: str | None = Field(default=None, min_length=2, max_length=150)
+    description: str | None = None
+    modules: list[dict] | None = None
+    stages: list[dict] | None = None
+    lead_sources: list[str] | None = None
+    tags: list[dict] | None = None
+    settings: dict | None = None

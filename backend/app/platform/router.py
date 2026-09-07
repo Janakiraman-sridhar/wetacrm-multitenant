@@ -9,7 +9,7 @@ A platform admin has no route into a tenant's own CRM: there is no impersonation
 admin can do to a workspace — its modules, its template, its status — is done from here.
 """
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -186,6 +186,46 @@ def delete_tenant(
         )
         db.commit()
     return {"detail": "Tenant deleted"}
+
+
+@router.get("/tenants/{tenant_id}/export")
+def export_tenant(
+    tenant_id: str,
+    request: Request,
+    include_empty: bool = False,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_platform_admin),
+):
+    """Everything one workspace owns, as a zip of CSVs.
+
+    For a client who is leaving, or who has been asked for their records. Audited,
+    because an export is the easiest way to take a whole workspace at once.
+    """
+    from app.platform import export as export_service
+
+    with platform_scope():
+        tenant = db.get(Tenant, tenant_id)
+    if not tenant:
+        raise NotFoundError("Tenant")
+
+    archive = export_service.build_export(db, tenant, include_empty=include_empty)
+
+    with platform_scope():
+        service.platform_audit(
+            db, admin.id, "tenant.export", tenant.id,
+            {"name": tenant.name, "bytes": len(archive)}, _client_ip(request),
+        )
+        db.commit()
+
+    stamp = utcnow().strftime("%Y%m%d")
+    return Response(
+        content=archive,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{tenant.slug}-{stamp}.zip"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 # --- retention -----------------------------------------------------------------

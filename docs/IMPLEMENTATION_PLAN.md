@@ -306,15 +306,15 @@ most common thing to block a launch. 5.1–5.5 have no external dependency and s
 
 ---
 
-## Phase 7 — Hardening, tests and deployment 🚧 IN PROGRESS
+## Phase 7 — Hardening, tests and deployment ✅ COMPLETE
 
 | # | Task | Files | Size |
 |---|---|---|---|
-| 7.1 | **Security review.** Re-audit every tenant-isolation path and every PII path; confirm no encrypted value reaches logs, search, exports or error messages. | — | M |
-| 7.2 | **Redis rate limiting.** Replace the in-memory limiter so it survives multiple workers. | `app/core/rate_limit.py` | S |
-| 7.3 | **Signed download URLs** with expiry for all attachments; MIME sniffing and size caps on upload. | `app/documents/router.py`, `app/services/storage.py` | M |
-| 7.4 | **Performance.** Indexes for expiry, DOB day-month, renewal windows and JSONB custom fields; profile lists and dashboards at 10k+ policies per tenant; fix N+1 loads. | migrations, routers | M |
-| 7.5 | **Test coverage** beyond Phase 0's isolation suite: auth and refresh, RBAC, encryption round-trip and masking, billing maths, renewal transitions, provisioning idempotency, CSV import/export. | `backend/tests/**` | L |
+| 7.1 | ✅ **Security review, written as checks.** A review done once is true once, so it is a test file: every route is authenticated or explicitly listed public (221 routes swept), every table is tenant-scoped or named as a platform table, and a stored PAN is proven absent from list responses, search, CSV exports, the activity timeline and the audit log. | `backend/tests/test_security_review.py` | M |
+| 7.2 | ✅ **Redis rate limiting.** Sliding window over a sorted set, shared across workers; falls back to the in-memory counter without `REDIS_URL` and says so once; fails *open* if Redis is unreachable mid-request. | `app/core/rate_limit.py` | S |
+| 7.3 | ✅ **Signed download URLs** (HMAC, 5-minute expiry, tenant named in the token and re-entered on read, signed with a key domain-separated from `JWT_SECRET`); MIME sniffed from the bytes rather than trusted from the upload header; HTML and SVG refused; `nosniff`, a sandbox CSP and attachment disposition on everything served. | `app/services/downloads.py`, `app/services/mime.py`, `app/files/router.py` | M |
+| 7.4 | ✅ **Performance.** Twelve composite indexes leading with `tenant_id`, benchmarked at 12,000 policies across two tenants: dashboard KPIs 32x and 45x faster, renewals 3.1x. Two candidates measured and *left out* at ~1.0x. | `migrations/versions/0010_*.py`, `app/models_registry.py` | M |
+| 7.5 | ✅ **Test coverage.** 470 tests, up from 323: sign-in and refusal, token forgery and expiry, refresh-token confusion, RBAC per permission, `Decimal` money arithmetic, document numbering, and CSV import/export including the tenant an import lands in. | `backend/tests/test_auth_rbac.py`, `test_billing_io.py`, `test_files.py` | L |
 | 7.6 | ✅ **Purge and restore.** 30-day soft-delete purge (rows, files and search index), a console list of what is in the window, purge-now with the slug typed, and a documented backup/restore procedure. *Per-tenant data export still to do.* | `app/platform/purge.py`, `app/automation/tasks.py`, `docs/DEPLOY.md` | M |
 | 7.7 | ✅ **Deployment.** `PII_MASTER_KEY` plumbed through both compose files; compose now *refuses to start* without it, `JWT_SECRET` or `ADMIN_PASSWORD` rather than falling back to a placeholder; `.env.example` ships blanks and generation instructions; runbook in `docs/DEPLOY.md`. | `docker-compose*.yml`, `docker/.env.example`, `docs/DEPLOY.md` | M |
 

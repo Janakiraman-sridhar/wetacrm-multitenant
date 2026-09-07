@@ -191,9 +191,9 @@ def _clear_rate_limits():
     that signs in makes some *later, unrelated* test start returning 429 — a failure
     that points at entirely the wrong code.
     """
-    from app.core.rate_limit import _hits
+    from app.core import rate_limit
 
-    _hits.clear()
+    rate_limit.reset()
     yield
 
 

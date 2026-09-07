@@ -212,3 +212,80 @@ def test_a_ciphertext_from_a_future_version_is_refused():
     _, nonce_b64, ciphertext_b64 = blob.split(":", 2)
     with pytest.raises(Exception):
         crypto.decrypt_with_key(key, f"v99:{nonce_b64}:{ciphertext_b64}")
+
+
+# --- rate limiting ------------------------------------------------------------
+
+def test_the_limiter_refuses_past_the_limit(monkeypatch):
+    """The in-memory path, which is what a single-container deployment uses."""
+    from app.core import rate_limit
+    from app.core.exceptions import AppError
+
+    rate_limit.reset()
+    monkeypatch.setattr(rate_limit.settings, "redis_url", "")
+
+    class _Request:
+        client = type("C", (), {"host": "10.0.0.1"})()
+
+    guard = rate_limit.rate_limiter("unit-test", limit=3)
+    for _ in range(3):
+        guard(_Request())
+    with pytest.raises(AppError) as excinfo:
+        guard(_Request())
+    assert excinfo.value.status_code == 429
+
+
+def test_the_limiter_separates_callers(monkeypatch):
+    """One noisy client must not lock out everyone behind a different address."""
+    from app.core import rate_limit
+
+    rate_limit.reset()
+    monkeypatch.setattr(rate_limit.settings, "redis_url", "")
+
+    def request(ip):
+        return type("R", (), {"client": type("C", (), {"host": ip})()})()
+
+    guard = rate_limit.rate_limiter("unit-test-2", limit=2)
+    guard(request("10.0.0.1"))
+    guard(request("10.0.0.1"))
+    guard(request("10.0.0.2"))  # a different caller still has their full budget
+
+
+def test_the_limiter_warns_when_it_is_only_per_process(monkeypatch, caplog):
+    """Otherwise a multi-worker deployment thinks it is protected and is not."""
+    from app.core import rate_limit
+
+    monkeypatch.setattr(rate_limit.settings, "redis_url", "")
+    monkeypatch.setattr(rate_limit, "_warned_no_redis", False)
+    with caplog.at_level("WARNING"):
+        rate_limit._get_redis()
+    assert any("per-process" in r.message for r in caplog.records)
+
+
+def test_an_unreachable_redis_fails_open(monkeypatch):
+    """A limiter that takes the product down when its cache blinks is worse than none."""
+    from app.core import rate_limit
+
+    rate_limit.reset()
+    monkeypatch.setattr(rate_limit.settings, "redis_url", "redis://127.0.0.1:6399/0")
+    monkeypatch.setattr(rate_limit, "_redis", None)
+    monkeypatch.setattr(rate_limit, "_redis_failed", False)
+
+    guard = rate_limit.rate_limiter("unit-test-3", limit=1)
+    request = type("R", (), {"client": type("C", (), {"host": "10.0.0.9"})()})()
+    guard(request)  # falls back rather than raising
+
+
+def test_sign_in_is_rate_limited(client):
+    """The endpoint that matters: an unlimited login is an offline password guess."""
+    from app.core import rate_limit
+
+    rate_limit.reset()
+    codes = [
+        client.post(
+            "/api/v1/auth/login", json={"email": "nobody@example.com", "password": "wrong"}
+        ).status_code
+        for _ in range(25)
+    ]
+    assert 429 in codes, "sign-in accepted 25 attempts without limiting"
+    rate_limit.reset()

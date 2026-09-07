@@ -197,15 +197,20 @@ off unless its template says otherwise.
 
 ---
 
-## 8. What is not done yet
+## 8. Known limits
 
 Honest list, so nothing here is a surprise in production:
 
-- **Rate limiting is in-memory**, so it resets on restart and does not hold across
-  multiple backend containers. Fine for one container. (Plan 7.2.)
-- **Attachment URLs are not signed or expiring.** (Plan 7.3.)
-- **Not load-tested** beyond small data. Indexes for renewal windows and custom-field
-  queries are still to come. (Plan 7.4.)
+- **Rate limiting needs `REDIS_URL` to be shared.** Without it the limiter is
+  per-process: it resets on restart and gives four workers four times the budget.
+  The app warns once at startup when this is the case.
+- **Not load-tested beyond ~12,000 policies per tenant.** The composite indexes were
+  benchmarked at that size and the dashboard queries are fast there. Above it, profile
+  before assuming.
+- **Search re-indexing is nightly.** A record edited today is findable by SQL fallback
+  immediately and by Meilisearch after the nightly job.
+- **Email is optional.** Without `SMTP_HOST` the app runs and logs what it would have
+  sent; password reset then cannot reach anyone.
 
-None of these block a first deployment with a small number of workspaces. All of them
-matter before this holds many clients' data.
+None of these block a deployment. The first two are the ones to revisit as the number
+of workspaces grows.

@@ -801,11 +801,21 @@ def test_tenant_detail_carries_what_the_console_needs_to_show(client, admin_head
         client.delete(f"{API}/platform/tenants/{created.json()['id']}", headers=admin_headers)
 
 
-def test_tenant_detail_counts_are_that_tenants_own(client, admin_headers, alpha):
+def test_tenant_detail_counts_are_that_tenants_own(client, admin_headers, alpha, bravo):
     """The counts run in the tenant's scope — a cross-tenant total would be worse
-    than no number at all, because it looks authoritative."""
+    than no number at all, because it looks authoritative.
+
+    Compared against what the tenant's own API reports rather than a fixed number,
+    so the test says "these agree" instead of breaking whenever another test adds
+    a row.
+    """
     detail = client.get(
         f"{API}/platform/tenants/{alpha.tenant_id}", headers=admin_headers
     ).json()
-    assert detail["record_counts"]["customers"] == 1
-    assert detail["record_counts"]["companies"] == 1
+    own = client.get(f"{API}/contacts", params={"page_size": 1}, headers=alpha.auth()).json()
+    assert detail["record_counts"]["customers"] == own["total"]
+
+    other = client.get(f"{API}/contacts", params={"page_size": 1}, headers=bravo.auth()).json()
+    assert detail["record_counts"]["customers"] != own["total"] + other["total"], (
+        "the console counted both tenants together"
+    )

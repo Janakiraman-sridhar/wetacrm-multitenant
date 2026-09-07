@@ -129,7 +129,11 @@ def parse_csv(raw: bytes, spec: IOSpec) -> list[dict]:
             key = label_to_key.get(h.lower()) or (h if h in keys else None)
             if key:
                 row[key] = (val or "").strip()
-        out.append(row)
+        # A row with nothing in it is a blank line, not a record. Spreadsheet
+        # exports end with one constantly, and importing it created a nameless
+        # contact that nobody could explain the origin of.
+        if any(value for value in row.values()):
+            out.append(row)
     return out
 
 

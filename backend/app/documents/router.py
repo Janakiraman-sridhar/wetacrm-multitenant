@@ -12,7 +12,8 @@ from app.core.pagination import PageParams, page_params, paginate
 from app.core.schemas import Message, ORMModel, Page, UserBrief
 from app.database.session import get_db
 from app.documents.models import Document
-from app.services import storage
+from app.core.tenancy import require_tenant_id
+from app.services import downloads, mime, storage
 from app.users.models import User
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -59,11 +60,21 @@ async def upload_document(
     data = await file.read()
     if len(data) > MAX_UPLOAD_BYTES:
         raise AppError("File exceeds the 25 MB upload limit", 413)
-    key = storage.save_file(data, file.filename or "file", file.content_type)
+    if not data:
+        raise AppError("That file is empty", 400)
+
+    # The stored type comes from the bytes, never from the upload header: whatever
+    # is recorded here is what the file is later served as.
+    content_type = mime.sniff(data, file.content_type)
+    refusal = mime.rejected_reason(file.content_type or "")
+    if refusal:
+        raise AppError(refusal, 400)
+
+    key = storage.save_file(data, file.filename or "file", content_type)
     doc = Document(
         name=file.filename or "file",
         file_key=key,
-        mime_type=file.content_type,
+        mime_type=content_type,
         size_bytes=len(data),
         entity_type=entity_type,
         entity_id=entity_id,
@@ -76,14 +87,41 @@ async def upload_document(
     return doc
 
 
+@router.get("/{document_id}/link", dependencies=[Depends(require_perm("documents:read"))])
+def download_link(document_id: str, inline: bool = False, db: Session = Depends(get_db)):
+    """A short-lived signed URL for this document.
+
+    Handed to the browser so a file can be opened in a tab or embedded, without
+    the caller needing to attach a bearer token to the request that fetches it.
+    """
+    doc = get_or_404(db, Document, document_id, "Document")
+    token = downloads.sign(
+        doc.file_key, require_tenant_id(),
+        filename=doc.name, content_type=doc.mime_type, inline=inline,
+    )
+    return {
+        "url": f"/api/v1/files/{token}",
+        "expires_in_seconds": downloads.DEFAULT_TTL_SECONDS,
+        "filename": doc.name,
+    }
+
+
 @router.get("/{document_id}/download", dependencies=[Depends(require_perm("documents:read"))])
 def download_document(document_id: str, db: Session = Depends(get_db)):
+    """Direct download for a caller that does send a bearer token."""
     doc = get_or_404(db, Document, document_id, "Document")
-    data = storage.read_file(doc.file_key)
+    try:
+        data = storage.read_file(doc.file_key)
+    except (storage.StorageAccessDenied, FileNotFoundError, OSError):
+        raise AppError("Not found", 404)
     return Response(
         content=data,
-        media_type=doc.mime_type or "application/octet-stream",
-        headers={"Content-Disposition": f'attachment; filename="{doc.name}"'},
+        media_type=mime.sniff(data, doc.mime_type),
+        headers={
+            "Content-Disposition": f'attachment; filename="{doc.name}"',
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "sandbox; default-src 'none'",
+        },
     )
 
 

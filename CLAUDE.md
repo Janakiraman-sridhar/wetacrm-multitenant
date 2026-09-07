@@ -46,7 +46,8 @@ cd backend && .venv/Scripts/python.exe -m pytest          # all
 
 `backend/tests/` holds the tenant-isolation (Phase 0), template/provisioning (Phase 1)
 custom-field (Phase 2), customer-PII (Phase 3), policy (Phase 4), poster/WhatsApp (Phase 5) and
-loans/reports/insurance-quotation (Phase 6) suites — 272 tests. Install
+loans/reports/insurance-quotation (Phase 6) and hardening (Phase 7: auth/RBAC, billing and
+CSV I/O, signed downloads, purge, export, indexes, security review) suites — 470 tests. Install
 test deps with `pip install -r requirements-dev.txt`. There is no frontend test suite;
 `npm run build` (which runs `tsc -b`) is the only typecheck gate.
 
@@ -336,6 +337,34 @@ row, so "whose birthday is this week" stays a range scan.
 `tenant_modules` rows joined with the catalog's route/icon/permission. Two filters apply:
 the tenant decides which modules exist, the user's role decides which they can see.
 Never add a module to a hardcoded list in the frontend — add it to the catalog.
+
+### Serving files: signed links, and not trusting the uploader
+
+`/api/v1/files/{token}` is the one route that serves stored bytes without a bearer
+token, so a document can go in an `<img src>` or open in a tab. The signature is the
+credential: an HMAC over `{key, tenant, expiry}`, signed with a key
+**domain-separated from `JWT_SECRET`** so a download token can never be replayed as a
+session. Reading it re-enters the token's tenant scope — the key alone is not enough,
+because `tenants/<id>/…` is guessable in shape.
+
+`app/services/mime.py` decides what a file *is* from its bytes. `UploadFile.content_type`
+is whatever the client typed, and storing it means the uploader chooses the
+`Content-Type` their file is later served with — one browser quirk from stored XSS.
+HTML and SVG are refused outright (an SVG is a document that can run script wearing an
+image's clothes); everything else is served with `nosniff`, a sandbox CSP, and
+`attachment` disposition unless it is on a short inline-safe list.
+
+### Indexes lead with tenant_id
+
+Every query in a shared-schema multi-tenant app starts with `tenant_id = ?`, so a
+single-column index on the filtered column cannot serve one. `TENANT_COMPOSITE_INDEXES`
+in `app/models_registry.py` holds the list; migration `0010` holds the same list,
+deliberately duplicated because a migration that imports live app code stops describing
+the schema it produced. `tests/test_indexes.py` stops the two drifting.
+
+Measured at 12,000 policies before adding them: dashboard KPIs 32x and 45x faster,
+renewals 3.1x. Two candidates measured at ~1.0x were left out — an index that does not
+earn its place still costs write throughput.
 
 ### Schema changes
 

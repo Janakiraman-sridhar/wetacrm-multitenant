@@ -74,6 +74,8 @@ class Nominee(TenantScoped, BaseModel):
     __tablename__ = "nominees"
 
     contact_id: Mapped[str] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), index=True)
+    #: Set when a policy carries its own nominee rather than the customer default.
+    policy_id: Mapped[str | None] = mapped_column(String(32), index=True)
     name: Mapped[str] = mapped_column(String(200))
     relation: Mapped[str | None] = mapped_column(String(50))
     date_of_birth: Mapped[date | None] = mapped_column(Date)

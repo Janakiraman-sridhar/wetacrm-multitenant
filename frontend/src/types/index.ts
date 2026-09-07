@@ -438,3 +438,95 @@ export interface CustomerNote {
   created_at: string;
   author?: UserBrief | null;
 }
+
+// --- policies -----------------------------------------------------------------
+
+export interface Master {
+  id: string;
+  type: string;
+  name: string;
+  code?: string | null;
+  is_active: boolean;
+  order: number;
+}
+
+export type ProductLine = "motor" | "health" | "life" | "general";
+
+export type PolicyStatus =
+  | "draft" | "active" | "expiring" | "renewed" | "lapsed" | "cancelled";
+
+export interface Policy {
+  id: string;
+  policy_number: string;
+  product_line: ProductLine;
+  plan_name?: string | null;
+  insurer_id?: string | null;
+  bank_id?: string | null;
+  branch?: string | null;
+  sourcing_channel?: string | null;
+  customer_id: string;
+  owner_id?: string | null;
+  issue_date?: string | null;
+  start_date?: string | null;
+  expiry_date?: string | null;
+  premium_net: string | number;
+  premium_gst: string | number;
+  premium_gross: string | number;
+  sum_insured?: string | number | null;
+  currency: string;
+  payment_mode?: string | null;
+  payment_frequency?: string | null;
+  status: PolicyStatus;
+  renewal_of_id?: string | null;
+  renewed_to_id?: string | null;
+  commission_percent?: string | number | null;
+  commission_amount?: string | number | null;
+  registration_no?: string | null;
+  remarks?: string | null;
+  tags: string[];
+  /** Line-specific fields — vehicle, members covered, riders. */
+  details: Record<string, any>;
+  custom: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+  insurer?: Master | null;
+  bank?: Master | null;
+  customer?: { id: string; first_name: string; last_name: string; full_name: string; mobile?: string | null } | null;
+  owner?: UserBrief | null;
+  days_to_expiry?: number | null;
+  is_in_force?: boolean;
+}
+
+export interface RenewalDue {
+  id: string;
+  policy_number: string;
+  product_line: ProductLine;
+  expiry_date: string;
+  days_to_expiry: number;
+  premium_gross: string | number;
+  status: PolicyStatus;
+  customer?: Policy["customer"];
+  insurer?: Master | null;
+  owner?: UserBrief | null;
+}
+
+export interface PolicyStats {
+  customers: number;
+  active_policies: number;
+  book_premium: string | number;
+  renewals_60d: number;
+  renewals_30d: number;
+  renewals_7d: number;
+  lapsed: number;
+  new_business_mtd_count: number;
+  new_business_mtd_premium: string | number;
+  birthdays_this_week: number;
+  commission_mtd: string | number;
+}
+
+export interface PolicyCharts {
+  premium_by_month: { month: string; new: number; renewal: number }[];
+  by_insurer: { name: string; count: number; premium: number }[];
+  by_product_line: { name: string; count: number; premium: number }[];
+  by_status: { name: string; count: number }[];
+}

@@ -15,6 +15,9 @@ import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 import { formatDate, formatDateTime, formatMoney, timeAgo } from "@/lib/format";
 import { BirthdayPanel } from "@/components/BirthdayPanel";
+import { InsuranceKpis } from "@/components/InsuranceKpis";
+import { RenewalPanel } from "@/components/RenewalPanel";
+import { useModules } from "@/lib/modules";
 
 const PIE_COLORS = ["#4F46E5", "#10B981", "#F59E0B", "#EF4444", "#0EA5E9", "#8B5CF6", "#EC4899", "#64748B"];
 
@@ -86,6 +89,8 @@ function ChartCard({
 // --- page -----------------------------------------------------------------
 
 export default function Dashboard() {
+  const { data: modules } = useModules();
+  const hasPolicies = (modules ?? []).some((m) => m.module_key === "policies");
   const { user } = useAuth();
   const [preset, setPreset] = useState<PresetKey>("12m");
   const [range, setRange] = useState(() => presetRange("12m"));
@@ -275,8 +280,16 @@ export default function Dashboard() {
         </ChartCard>
       </div>
 
-      {/* Whose birthday is coming up — the daily prompt an agent actually acts on. */}
-      <BirthdayPanel compact />
+      {/* Insurance panels, shown only where the Policies module is switched on —
+          a general CRM tenant keeps the dashboard it had. */}
+      {hasPolicies && <InsuranceKpis />}
+      {hasPolicies && (
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <RenewalPanel compact />
+          <BirthdayPanel compact />
+        </div>
+      )}
+      {!hasPolicies && <BirthdayPanel compact />}
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <ChartCard title="Upcoming Meetings" icon={CalendarClock} onViewData={() => open("upcoming_meetings", "Meetings in period")}>

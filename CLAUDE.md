@@ -45,7 +45,7 @@ cd backend && .venv/Scripts/python.exe -m pytest          # all
 ```
 
 `backend/tests/` holds the tenant-isolation (Phase 0), template/provisioning (Phase 1)
-custom-field (Phase 2) and customer-PII (Phase 3) suites — 159 tests. Install
+custom-field (Phase 2), customer-PII (Phase 3) and policy (Phase 4) suites — 180 tests. Install
 test deps with `pip install -r requirements-dev.txt`. There is no frontend test suite;
 `npm run build` (which runs `tsc -b`) is the only typecheck gate.
 
@@ -166,6 +166,31 @@ render details the server cannot know, like which hook supplies a select's optio
 `useSchemaOverlay` in `CrudPage` layers the tenant's relabels, hides and custom fields on
 top. Custom form values are named `custom.<key>`, which react-hook-form nests into
 exactly the shape the API wants.
+
+### Policies — status is derived, renewal is a new row
+
+Two rules in `app/policies/service.py` shape the whole module:
+
+- **Status is never typed.** `expiring` and `lapsed` come from the expiry date, set on
+  create/update and by a nightly job. That is what makes "renewals due in 60 days" a
+  number worth acting on — it cannot drift because someone forgot a dropdown. Terminal
+  states (`renewed`, `cancelled`, `draft`) are left alone.
+- **A renewal is a new policy row**, linked back via `renewal_of_id` with the old one
+  marked `renewed` and pointed forward. Editing in place would destroy the record of
+  what the customer was covered for last year. `renewal_chain()` reads the history.
+
+Fields common to every line are columns; line-specific ones live in `details`, filtered
+through `LINE_FIELDS` so it cannot become a dumping ground — a tenant needing more adds
+a custom field. The exceptions promoted to columns (expiry, premium, insurer, bank,
+product line, status, registration number) are the ones filtered and summed constantly.
+
+`compute_premium()` derives whichever of net/GST/gross was omitted, so the premium
+schema fields are `None`-defaulted rather than `0` — otherwise "not supplied" and
+"free" are indistinguishable.
+
+`masters` holds a tenant's insurers, banks and branches as rows, because policies point
+at them; deleting one that is in use deactivates it so historical policies keep the
+insurer they were actually written with.
 
 ### Personal data — encryption, masking, reveal
 

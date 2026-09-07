@@ -42,6 +42,15 @@ celery_app.conf.beat_schedule = {
         "task": "app.automation.tasks.send_weekly_summary",
         "schedule": crontab(hour=3, minute=30, day_of_week=1),
     },
+    # Statuses first, so the reminder job sees the freshly-derived ones.
+    "refresh-policy-statuses-daily": {
+        "task": "app.automation.tasks.refresh_policy_statuses",
+        "schedule": crontab(hour=0, minute=30),
+    },
+    "create-renewal-tasks-daily": {
+        "task": "app.automation.tasks.create_renewal_tasks",
+        "schedule": crontab(hour=0, minute=45),
+    },
     "reindex-search-nightly": {
         "task": "app.automation.tasks.reindex_search",
         "schedule": crontab(hour=2, minute=0),

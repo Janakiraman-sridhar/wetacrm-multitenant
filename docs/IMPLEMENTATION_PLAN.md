@@ -179,7 +179,19 @@ Write the key-rotation and re-encryption procedure as part of this task, not aft
 
 ---
 
-## Phase 4 — Policies, renewals and the insurance dashboard
+## Phase 4 — Policies, renewals and the insurance dashboard ✅ COMPLETE
+
+*Delivered. 180 tests pass. Verified live end to end: issue a motor and a health policy,
+watch status derive from the expiry date, renew one and see the chain preserved and the
+policy drop off the renewal desk. Notes:*
+
+- *Premium schema fields default to `None`, not `0` — with a `0` default, `compute_premium`
+  could not tell "gross not supplied" from "gross is zero" and never derived it.*
+- *A master in use is deactivated rather than deleted, so historical policies keep the
+  insurer they were written with. Test fixtures have to allow for that.*
+- *Bumping a system template does not change existing tenants — that is the design. The
+  live tenant was brought up to date with `POST /platform/tenants/{id}/apply-template`,
+  which is exactly what that endpoint exists for.*
 
 **Goal.** The book of business exists and drives daily work.
 

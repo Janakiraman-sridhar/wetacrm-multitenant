@@ -1,5 +1,5 @@
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import and_, func, select
 
@@ -170,3 +170,80 @@ def _reindex_for_tenant(db) -> int:
             sync(row)
             count += 1
     return count
+
+
+@celery_app.task
+def refresh_policy_statuses() -> int:
+    """Move policies between active, expiring and lapsed as dates pass.
+
+    Status being derived rather than typed is what makes "renewals due in 60 days"
+    a number worth acting on — it cannot drift because someone forgot to change a
+    dropdown.
+    """
+    return for_each_tenant(_refresh_policy_statuses_for_tenant)
+
+
+def _refresh_policy_statuses_for_tenant(db) -> int:
+    from app.policies import service as policy_service
+
+    return policy_service.refresh_statuses(db)
+
+
+@celery_app.task
+def create_renewal_tasks() -> int:
+    """Raise a renewal task at each threshold before expiry.
+
+    De-duplicated on the policy and threshold, so a restart or a second run in the
+    same day does not bury the agent in copies of the same reminder.
+    """
+    return for_each_tenant(_create_renewal_tasks_for_tenant)
+
+
+def _create_renewal_tasks_for_tenant(db) -> int:
+    from app.policies.models import RENEWAL_WINDOWS
+    from app.policies import service as policy_service
+    from app.notifications.service import notify
+    from app.tasks.models import Task
+
+    created = 0
+    today = date.today()
+    for policy in policy_service.renewals_due(db, within_days=max(RENEWAL_WINDOWS)):
+        days = (policy.expiry_date - today).days
+        threshold = next((w for w in sorted(RENEWAL_WINDOWS) if days <= w), None)
+        if threshold is None:
+            continue
+
+        title = f"Renewal due in {threshold} days: {policy.policy_number}"
+        already = db.scalar(
+            select(Task).where(
+                Task.entity_type == "policy",
+                Task.entity_id == policy.id,
+                Task.title == title,
+            )
+        )
+        if already:
+            continue
+
+        customer = policy.customer.full_name if policy.customer else "customer"
+        db.add(
+            Task(
+                title=title,
+                description=(
+                    f"{customer}'s {policy.product_line} policy "
+                    f"{policy.policy_number} expires on {policy.expiry_date:%d %b %Y}."
+                ),
+                priority="high" if threshold <= 7 else "medium",
+                due_date=datetime.combine(policy.expiry_date, datetime.min.time()),
+                assigned_to_id=policy.owner_id,
+                entity_type="policy",
+                entity_id=policy.id,
+            )
+        )
+        if policy.owner_id:
+            notify(db, policy.owner_id, "renewal_due", title,
+                   f"Expires {policy.expiry_date:%d %b %Y}", f"/policies?id={policy.id}")
+        created += 1
+
+    if created:
+        db.commit()
+    return created

@@ -100,6 +100,7 @@ def apply_template(db: Session, tenant_id: str, config: TemplateConfig) -> None:
     _apply_lead_sources(db, config)
     _apply_tags(db, config)
     _apply_settings(db, config)
+    _apply_masters(db, config)
     _apply_email_templates(db, config)
     db.flush()
 
@@ -180,6 +181,27 @@ def _apply_settings(db: Session, config: TemplateConfig) -> None:
     # phases can read them without another table per list.
     if config.masters and "masters" not in existing:
         db.add(Setting(key="masters", value=config.masters))
+
+
+def _apply_masters(db: Session, config: TemplateConfig) -> None:
+    """Turn the template's reference lists into rows policies can point at.
+
+    The template names them in the plural ("insurers"); the table stores the
+    singular type ("insurer"), because a policy has one insurer.
+    """
+    from app.policies.models import MASTER_TYPES, Master
+
+    if not config.masters:
+        return
+
+    existing = {(m.type, m.name) for m in db.scalars(select(Master)).all()}
+    for plural, names in config.masters.items():
+        singular = plural[:-1] if plural.endswith("s") else plural
+        if singular not in MASTER_TYPES:
+            continue
+        for order, name in enumerate(names):
+            if (singular, name) not in existing:
+                db.add(Master(type=singular, name=name, order=order))
 
 
 def _apply_email_templates(db: Session, config: TemplateConfig) -> None:

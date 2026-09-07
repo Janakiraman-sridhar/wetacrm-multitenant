@@ -1,7 +1,7 @@
 {
   "key": "general_crm",
   "name": "General CRM",
-  "version": 1,
+  "version": 2,
   "description": "The full-purpose CRM: companies, contacts, leads, deals, projects, products, quotations, invoices and support. This is the behaviour the product shipped with before templates existed.",
   "modules": [
     {
@@ -93,6 +93,12 @@
       "enabled": true,
       "label": "Settings",
       "order": 15
+    },
+    {
+      "key": "policies",
+      "enabled": false,
+      "label": "Policies",
+      "order": 6
     }
   ],
   "roles": [

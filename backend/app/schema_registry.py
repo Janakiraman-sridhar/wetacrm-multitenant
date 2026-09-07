@@ -24,6 +24,7 @@ from app.leads.models import Lead
 from app.products.models import Product
 from app.projects.models import Project
 from app.support.models import Ticket
+from app.policies.models import Policy
 from app.tasks.models import Task
 
 #: Modules that support per-tenant custom fields. Each maps to the model whose
@@ -37,6 +38,7 @@ CUSTOMISABLE_MODELS: dict[str, Any] = {
     "products": Product,
     "projects": Project,
     "support": Ticket,
+    "policies": Policy,
 }
 
 CUSTOMISABLE_MODULES = list(CUSTOMISABLE_MODELS)
@@ -55,6 +57,7 @@ _LOCKED_COLUMNS: dict[str, set[str]] = {
     "products": {"name"},
     "projects": {"name", "status"},
     "support": {"number", "subject", "status"},
+    "policies": {"policy_number", "product_line", "customer_id", "status"},
 }
 
 # Labels the column name does not produce well on its own.
@@ -78,6 +81,24 @@ _LABEL_OVERRIDES = {
     "converted_deal_id": "Converted deal",
     "team_ids": "Team",
     "is_active": "Active",
+    "insurer_id": "Insurer",
+    "bank_id": "Bank",
+    "customer_id": "Customer",
+    "proposer_id": "Proposer",
+    "policy_number": "Policy number",
+    "product_line": "Product line",
+    "plan_name": "Plan",
+    "premium_net": "Premium (net)",
+    "premium_gst": "GST",
+    "premium_gross": "Premium (gross)",
+    "sum_insured": "Sum insured",
+    "registration_no": "Registration number",
+    "expiry_date": "Expiry date",
+    "renewal_of_id": "Renewal of",
+    "renewed_to_id": "Renewed to",
+    "commission_percent": "Commission %",
+    "commission_amount": "Commission amount",
+    "sourcing_channel": "Sourcing channel",
 }
 
 FIELD_TYPES = [

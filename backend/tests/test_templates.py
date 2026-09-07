@@ -41,9 +41,10 @@ def test_system_templates_are_loaded(client, admin_headers):
     by_key = {t["key"]: t for t in resp.json()}
     assert {"general_crm", "insurance_agent"} <= set(by_key)
     assert all(by_key[k]["is_system"] for k in ("general_crm", "insurance_agent"))
-    # The insurance template deliberately switches some modules off.
-    assert by_key["insurance_agent"]["enabled_module_count"] < by_key["insurance_agent"]["module_count"]
-    assert by_key["general_crm"]["enabled_module_count"] == by_key["general_crm"]["module_count"]
+    # Each template switches off what its vertical does not use: the insurance one
+    # drops Companies/Invoices/Projects/Support, the general one drops Policies.
+    for key in ("insurance_agent", "general_crm"):
+        assert by_key[key]["enabled_module_count"] < by_key[key]["module_count"]
 
 
 def test_template_detail_carries_its_config(client, admin_headers):
@@ -99,7 +100,14 @@ def test_general_tenant_still_matches_the_original_crm(client, admin_headers):
     )
 
     modules = client.get(f"{API}/modules", params={"enabled_only": False}, headers=own).json()
-    assert all(m["enabled"] for m in modules), "general CRM should have every module on"
+    enabled = {m["module_key"] for m in modules if m["enabled"]}
+    # Every module the product shipped with before the insurance work.
+    assert enabled == {
+        "dashboard", "companies", "contacts", "leads", "deals", "pipeline", "calendar",
+        "tasks", "projects", "products", "quotations", "invoices", "support", "reports", "settings",
+    }
+    # Policies is insurance-only and must not appear for a general CRM tenant.
+    assert "policies" not in enabled
     by_key = {m["module_key"]: m["label"] for m in modules}
     assert by_key["contacts"] == "Contacts"
 

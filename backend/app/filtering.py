@@ -25,6 +25,7 @@ from app.contacts.models import Contact
 from app.deals.models import Deal
 from app.invoices.models import Invoice
 from app.leads.models import Lead
+from app.policies.models import Policy
 from app.projects.models import Project
 from app.quotations.models import Quotation
 from app.support.models import Ticket
@@ -168,6 +169,23 @@ def apply_filters(stmt, fields: dict[str, FF], raw: str | None, model=None, cust
 
 # Whitelist of filterable fields per entity (keys must match the frontend defs).
 FILTERS: dict[str, dict[str, FF]] = {
+    # The filters an agent actually works a book of business with: what is expiring,
+    # from which insurer, sourced through which bank.
+    "policies": {
+        "product_line": FF(Policy.product_line, "select"),
+        "status": FF(Policy.status, "select"),
+        "insurer_id": FF(Policy.insurer_id, "select"),
+        "bank_id": FF(Policy.bank_id, "select"),
+        "sourcing_channel": FF(Policy.sourcing_channel, "select"),
+        "owner_id": FF(Policy.owner_id, "select"),
+        "branch": FF(Policy.branch, "text"),
+        "registration_no": FF(Policy.registration_no, "text"),
+        "expiry_date": FF(Policy.expiry_date, "date"),
+        "issue_date": FF(Policy.issue_date, "date"),
+        "start_date": FF(Policy.start_date, "date"),
+        "premium_gross": FF(Policy.premium_gross, "number"),
+        "sum_insured": FF(Policy.sum_insured, "number"),
+    },
     "companies": {
         "industry": FF(Company.industry, "text"),
         "city": FF(Company.city, "text"),

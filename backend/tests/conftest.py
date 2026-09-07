@@ -23,6 +23,7 @@ os.environ["MEILI_URL"] = ""
 os.environ["SMTP_HOST"] = ""
 
 from fastapi.testclient import TestClient  # noqa: E402
+from sqlalchemy import select  # noqa: E402
 
 from app import models_registry  # noqa: E402,F401
 from app.companies.models import Company  # noqa: E402
@@ -38,6 +39,7 @@ from app.leads.models import Lead, LeadSource  # noqa: E402
 from app.main import app  # noqa: E402
 from app.meetings.models import CalendarEvent, Meeting  # noqa: E402
 from app.notifications.models import Notification  # noqa: E402
+from app.platform import provisioning  # noqa: E402
 from app.platform.models import Tenant  # noqa: E402
 from app.products.models import Product  # noqa: E402
 from app.projects.models import Project  # noqa: E402
@@ -79,9 +81,14 @@ def _build_tenant(db, key: str) -> TenantWorld:
     world.tenant_id = tenant.id
 
     with tenant_scope(tenant.id):
-        role = Role(name="Super Admin", permissions=["*"], is_system=True)
-        db.add(role)
+        # Build the workspace the way provisioning really does, so fixtures exercise
+        # the template path rather than a hand-rolled approximation of it.
+        provisioning.apply_template(db, tenant.id, provisioning.get_template(db, "general_crm"))
         db.flush()
+
+        role = db.scalar(select(Role).where(Role.name == "Super Admin"))
+        stage = db.scalar(select(DealStage).order_by(DealStage.order))
+        source = db.scalar(select(LeadSource).order_by(LeadSource.name))
 
         admin = User(
             email=world.admin_email,
@@ -92,10 +99,8 @@ def _build_tenant(db, key: str) -> TenantWorld:
         )
         db.add(admin)
 
-        stage = DealStage(name="New", order=1, probability=10)
-        source = LeadSource(name="Website")
         company = Company(name=f"{key}-corp", industry="Insurance", city="Chennai")
-        db.add_all([stage, source, company])
+        db.add(company)
         db.flush()
 
         contact = Contact(first_name=key, last_name="Contact", company_id=company.id,
@@ -117,11 +122,12 @@ def _build_tenant(db, key: str) -> TenantWorld:
                             mime_type="application/pdf", size_bytes=10)
         notification = Notification(user_id=admin.id, type="system", title=f"{key}-notification")
         tag = Tag(name=f"{key}-tag")
-        template = EmailTemplate(name="welcome", subject="Hi", body_html="<p>Hi</p>")
-        setting = Setting(key="branding", value={"app_name": f"{key.upper()} CRM"})
         db.add_all([deal, lead, task, meeting, event, project, ticket, quotation,
-                    invoice, document, notification, tag, template, setting])
+                    invoice, document, notification, tag])
         db.flush()
+
+        branding = db.scalar(select(Setting).where(Setting.key == "branding"))
+        branding.value = {**(branding.value or {}), "app_name": f"{key.upper()} CRM"}
 
         world.ids = {
             "company": company.id, "contact": contact.id, "lead": lead.id, "deal": deal.id,
@@ -171,8 +177,9 @@ def bravo(worlds) -> TenantWorld:
     return worlds["bravo"]
 
 
-@pytest.fixture()
+@pytest.fixture(scope="session")
 def platform_admin_token(client) -> str:
+    """Signed in once per session — the login endpoint is rate limited."""
     from app.core.config import settings
     from app.platform import service
 

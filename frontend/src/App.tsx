@@ -21,11 +21,37 @@ import Reports from "@/pages/Reports";
 import SettingsPage from "@/pages/SettingsPage";
 import Support from "@/pages/Support";
 import Tasks from "@/pages/Tasks";
+import { PlatformLayout } from "@/platform/PlatformLayout";
+import TenantDetail from "@/platform/TenantDetail";
+import Tenants from "@/platform/Tenants";
+import Templates from "@/platform/Templates";
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <PageSpinner />;
   if (!user) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
+/**
+ * The Super Admin console. A platform admin has no tenant of their own, so the CRM
+ * routes would have nothing to show them — they are sent here instead, and reach a
+ * client's data only by impersonating from a tenant page.
+ */
+function PlatformOnly({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+  if (loading) return <PageSpinner />;
+  if (!user) return <Navigate to="/login" replace />;
+  if (!user.is_platform_admin) return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
+/** Keeps a platform admin out of the tenant CRM unless they are impersonating. */
+function TenantOnly({ children }: { children: React.ReactNode }) {
+  const { user, loading, impersonating } = useAuth();
+  if (loading) return <PageSpinner />;
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.is_platform_admin && !impersonating) return <Navigate to="/platform" replace />;
   return <>{children}</>;
 }
 
@@ -35,11 +61,27 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
+
+      <Route
+        path="/platform"
+        element={
+          <PlatformOnly>
+            <PlatformLayout />
+          </PlatformOnly>
+        }
+      >
+        <Route index element={<Tenants />} />
+        <Route path="tenants/:tenantId" element={<TenantDetail />} />
+        <Route path="templates" element={<Templates />} />
+      </Route>
+
       <Route
         path="/"
         element={
           <Protected>
-            <AppLayout />
+            <TenantOnly>
+              <AppLayout />
+            </TenantOnly>
           </Protected>
         }
       >
@@ -59,6 +101,7 @@ export default function App() {
         <Route path="reports" element={<Reports />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
+
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

@@ -44,7 +44,8 @@ cd backend && .venv/Scripts/python.exe -m pytest          # all
 .venv/Scripts/python.exe -m pytest tests/test_tenant_isolation.py -k search   # one test
 ```
 
-`backend/tests/` currently holds the tenant-isolation suite (~82 tests) added in Phase 0. Install
+`backend/tests/` holds the tenant-isolation suite (Phase 0) and the template/provisioning
+suite (Phase 1) — 99 tests. Install
 test deps with `pip install -r requirements-dev.txt`. There is no frontend test suite;
 `npm run build` (which runs `tsc -b`) is the only typecheck gate.
 
@@ -109,6 +110,36 @@ Every business row belongs to a tenant, and isolation is enforced **centrally** 
 
 Anything added to `app/*/models.py` almost certainly needs `TenantScoped`, and any new
 global unique constraint needs to be composite with `tenant_id` instead.
+
+### Templates — how a tenant gets its shape
+
+A tenant is built from a **template**: `app/platform/templates/*.json`, validated by
+`template_schema.py`, applied by `provisioning.apply_template()`. It decides which
+modules exist, what each is *called* for that tenant, plus starting roles, pipeline
+stages, lead sources, tags, settings and email templates.
+
+- `general_crm.json` was **generated from the original seed constants**, so it
+  reproduces the pre-template CRM exactly. It is the regression baseline — after any
+  change, a tenant created from it must still behave like the old app.
+- `insurance_agent.json` renames Contacts to Customers, Leads to Enquiries, swaps in an
+  enquiry-to-policy pipeline, and switches off Companies/Invoices/Projects/Support.
+- Templates are **copied into a tenant at provisioning, never referenced live**, so
+  editing one cannot change a running tenant. `POST /platform/tenants/{id}/apply-template`
+  is the deliberate exception, and is additive only.
+- `sync_system_templates()` refreshes a stored system template only when the file's
+  `version` is higher. Bump it when you edit a file.
+- Adding a vertical = a JSON file + its key in `SYSTEM_TEMPLATE_KEYS`. No code changes.
+- Module keys come from `app/platform/catalog.py`; a template may only reference keys in
+  it, and `locked` modules (dashboard, settings) stay on whatever a template says.
+
+`app/database/seed.py` no longer exists — provisioning replaced it.
+
+### The sidebar is data, not code
+
+`AppLayout` builds its nav from `GET /api/v1/modules`, which returns this tenant's
+`tenant_modules` rows joined with the catalog's route/icon/permission. Two filters apply:
+the tenant decides which modules exist, the user's role decides which they can see.
+Never add a module to a hardcoded list in the frontend — add it to the catalog.
 
 ### Schema changes
 

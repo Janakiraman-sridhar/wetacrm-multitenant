@@ -33,6 +33,8 @@ class UserOut(ORMModel):
     phone: str | None = None
     avatar_url: str | None = None
     is_active: bool
+    # Lets the frontend route a platform admin to the console instead of the CRM.
+    is_platform_admin: bool = False
     theme: str
     last_login_at: datetime | None = None
     created_at: datetime

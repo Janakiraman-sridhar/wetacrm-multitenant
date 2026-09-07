@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.security import hash_password
 from app.core.tenancy import platform_scope, tenant_scope
-from app.database import seed
+from app.platform import provisioning
 from app.platform.models import PlatformAuditLog, Tenant
 from app.users.models import User
 
@@ -89,7 +89,7 @@ def provision_tenant(
 
     # Everything below belongs to the new tenant.
     with tenant_scope(tenant.id):
-        seed.run(db, tenant.id)
+        provisioning.apply_template(db, tenant.id, provisioning.get_template(db, template_key))
 
         if owner_email:
             with platform_scope():
@@ -97,7 +97,9 @@ def provision_tenant(
             if not clash:
                 from app.users.models import Role  # local import avoids a cycle at module load
 
-                admin_role = db.scalar(select(Role).where(Role.name == "Super Admin"))
+                admin_role = db.scalar(
+                    select(Role).where(Role.name == "Super Admin")
+                ) or db.scalar(select(Role).order_by(Role.created_at))
                 db.add(
                     User(
                         email=owner_email,
@@ -120,9 +122,13 @@ def ensure_default_tenant(db: Session) -> Tenant:
     with platform_scope():
         tenant = db.scalar(select(Tenant).where(Tenant.slug == settings.default_tenant_slug))
     if tenant:
-        # Keep its baseline data current without touching customisations.
+        # Keep its baseline data current without touching customisations. This is
+        # also what backfills module rows for a tenant provisioned before templates.
         with tenant_scope(tenant.id):
-            seed.run(db, tenant.id)
+            provisioning.apply_template(
+                db, tenant.id, provisioning.get_template(db, tenant.template_key)
+            )
+            db.commit()
         return tenant
 
     return provision_tenant(
@@ -183,6 +189,7 @@ def platform_audit(
 
 
 def bootstrap(db: Session) -> None:
-    """Startup: make sure the platform admin and the Default tenant exist."""
+    """Startup: load system templates, then ensure the platform admin and Default tenant."""
+    provisioning.sync_system_templates(db)
     ensure_platform_admin(db)
     ensure_default_tenant(db)

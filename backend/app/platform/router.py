@@ -17,10 +17,13 @@ from app.core.config import settings
 from app.core.tenancy import platform_scope, tenant_scope
 from app.database.base import utcnow
 from app.database.session import get_db
-from app.platform import service
-from app.platform.models import Tenant
+from app.platform import provisioning, service
+from app.platform.catalog import MODULES_BY_KEY
+from app.platform.models import CrmTemplate, Tenant, TenantModule
+from app.platform.modules_router import list_tenant_modules
 from app.platform.schemas import (
-    ImpersonateIn, ImpersonateOut, PlatformStatsOut, TenantCreate, TenantDetailOut, TenantOut, TenantUpdate,
+    ImpersonateIn, ImpersonateOut, PlatformStatsOut, TemplateClone, TemplateDetailOut,
+    TemplateOut, TenantCreate, TenantDetailOut, TenantModuleUpdate, TenantOut, TenantUpdate,
 )
 from app.users.models import Role, User
 
@@ -230,3 +233,203 @@ def _detail(db: Session, tenant: Tenant) -> dict:
     data["user_count"] = count
     data["settings"] = tenant.settings or {}
     return data
+
+
+# --- templates ----------------------------------------------------------------
+
+def _template_summary(row: CrmTemplate) -> dict:
+    config = row.config or {}
+    modules = config.get("modules", [])
+    return {
+        "id": row.id,
+        "key": row.key,
+        "name": row.name,
+        "description": row.description,
+        "version": row.version,
+        "is_system": row.is_system,
+        "module_count": len(modules),
+        "enabled_module_count": sum(1 for m in modules if m.get("enabled", True)),
+        "role_count": len(config.get("roles", [])),
+        "stage_count": len(config.get("stages", [])),
+    }
+
+
+@router.get("/templates", response_model=list[TemplateOut])
+def list_templates(db: Session = Depends(get_db), admin: User = Depends(get_platform_admin)):
+    with platform_scope():
+        rows = db.scalars(
+            select(CrmTemplate).order_by(CrmTemplate.is_system.desc(), CrmTemplate.name)
+        ).all()
+    return [_template_summary(row) for row in rows]
+
+
+@router.get("/templates/{key}", response_model=TemplateDetailOut)
+def get_template_detail(
+    key: str, db: Session = Depends(get_db), admin: User = Depends(get_platform_admin)
+):
+    with platform_scope():
+        row = db.scalar(select(CrmTemplate).where(CrmTemplate.key == key))
+    if row is None:
+        raise NotFoundError("Template")
+    data = _template_summary(row)
+    data["config"] = row.config or {}
+    return data
+
+
+@router.post("/templates/{key}/clone", response_model=TemplateDetailOut)
+def clone_template(
+    key: str,
+    payload: TemplateClone,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_platform_admin),
+):
+    """Copy a template so it can be customised without touching the system one.
+
+    System templates stay read-only: they are refreshed from the bundled JSON files
+    whenever their version increases, so edits to them would be overwritten.
+    """
+    with platform_scope():
+        source = db.scalar(select(CrmTemplate).where(CrmTemplate.key == key))
+        if source is None:
+            raise NotFoundError("Template")
+        if db.scalar(select(CrmTemplate).where(CrmTemplate.key == payload.key)):
+            raise AppError("A template with that key already exists", 409)
+
+        config = dict(source.config or {})
+        config["key"] = payload.key
+        config["name"] = payload.name
+        if payload.description is not None:
+            config["description"] = payload.description
+
+        clone = CrmTemplate(
+            key=payload.key,
+            name=payload.name,
+            description=payload.description or source.description,
+            version=1,
+            is_system=False,
+            config=config,
+        )
+        db.add(clone)
+        service.platform_audit(
+            db, admin.id, "template.clone", None,
+            {"from": source.key, "to": payload.key}, _client_ip(request),
+        )
+        db.commit()
+
+    data = _template_summary(clone)
+    data["config"] = clone.config
+    return data
+
+
+@router.delete("/templates/{key}", response_model=Message)
+def delete_template(
+    key: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_platform_admin),
+):
+    with platform_scope():
+        row = db.scalar(select(CrmTemplate).where(CrmTemplate.key == key))
+        if row is None:
+            raise NotFoundError("Template")
+        if row.is_system:
+            raise AppError("System templates cannot be deleted", 400)
+        in_use = db.scalar(
+            select(func.count()).select_from(Tenant).where(
+                Tenant.template_key == key, Tenant.deleted_at.is_(None)
+            )
+        ) or 0
+        if in_use:
+            raise AppError(f"{in_use} tenant(s) still use this template", 409)
+        db.delete(row)
+        service.platform_audit(
+            db, admin.id, "template.delete", None, {"key": key}, _client_ip(request)
+        )
+        db.commit()
+    return {"detail": "Template deleted"}
+
+
+# --- a tenant's modules, from the platform side --------------------------------
+
+@router.get("/tenants/{tenant_id}/modules")
+def tenant_modules(
+    tenant_id: str, db: Session = Depends(get_db), admin: User = Depends(get_platform_admin)
+):
+    tenant = service.get_tenant(db, tenant_id)
+    if not tenant or tenant.deleted_at:
+        raise NotFoundError("Tenant")
+    with tenant_scope(tenant_id):
+        return list_tenant_modules(db, enabled_only=False)
+
+
+@router.patch("/tenants/{tenant_id}/modules")
+def update_tenant_modules(
+    tenant_id: str,
+    payload: list[TenantModuleUpdate],
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_platform_admin),
+):
+    """Rename, reorder or switch a tenant's modules on and off."""
+    tenant = service.get_tenant(db, tenant_id)
+    if not tenant or tenant.deleted_at:
+        raise NotFoundError("Tenant")
+
+    changed: dict[str, dict] = {}
+    with tenant_scope(tenant_id):
+        rows = {m.module_key: m for m in db.scalars(select(TenantModule)).all()}
+        for update in payload:
+            row = rows.get(update.module_key)
+            if row is None:
+                continue
+            definition = MODULES_BY_KEY.get(row.module_key)
+            data = update.model_dump(exclude_unset=True, exclude={"module_key"})
+            if definition and definition.locked and data.get("enabled") is False:
+                raise AppError(f"{definition.label} cannot be switched off", 400)
+            for field, value in data.items():
+                if value is not None and getattr(row, field) != value:
+                    changed.setdefault(row.module_key, {})[field] = [getattr(row, field), value]
+                    setattr(row, field, value)
+        db.flush()
+        result = list_tenant_modules(db, enabled_only=False)
+
+    with platform_scope():
+        if changed:
+            service.platform_audit(
+                db, admin.id, "tenant.modules.update", tenant_id, changed, _client_ip(request)
+            )
+        db.commit()
+    return result
+
+
+@router.post("/tenants/{tenant_id}/apply-template", response_model=Message)
+def apply_template_to_tenant(
+    tenant_id: str,
+    template_key: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_platform_admin),
+):
+    """Re-apply a template to an existing tenant.
+
+    Additive only: it fills in roles, stages, sources, settings and modules the
+    tenant does not have yet, and never overwrites something already customised.
+    This is the deliberate action referred to in the PRD — templates are otherwise
+    copied once at provisioning and never touch a live tenant again.
+    """
+    tenant = service.get_tenant(db, tenant_id)
+    if not tenant or tenant.deleted_at:
+        raise NotFoundError("Tenant")
+
+    config = provisioning.get_template(db, template_key)
+    with tenant_scope(tenant_id):
+        provisioning.apply_template(db, tenant_id, config)
+    with platform_scope():
+        tenant.template_key = template_key
+        service.platform_audit(
+            db, admin.id, "tenant.template.apply", tenant_id,
+            {"template": template_key}, _client_ip(request),
+        )
+        db.commit()
+    return {"detail": f"Template '{config.name}' applied"}

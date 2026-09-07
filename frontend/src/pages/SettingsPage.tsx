@@ -312,7 +312,7 @@ function UsersTab() {
                       setEditing(u);
                       setForm({
                         email: u.email, password: "", first_name: u.first_name,
-                        last_name: u.last_name, phone: u.phone ?? "", role_id: u.role.id,
+                        last_name: u.last_name, phone: u.phone ?? "", role_id: u.role?.id ?? "",
                       });
                       setModalOpen(true);
                     }}

@@ -67,7 +67,19 @@ via a script, add records to both, and try to reach one from the other's session
 
 ---
 
-## Phase 1 — Templates, provisioning and Super Admin console
+## Phase 1 — Templates, provisioning and Super Admin console ✅ COMPLETE
+
+*Delivered. 99 tests pass. Creating a tenant from `insurance_agent` really does produce a
+different CRM — sidebar reads Customers / Enquiries / Opportunities, pipeline runs New
+enquiry → Policy issued — while a `general_crm` tenant is unchanged from the original app.
+Notes:*
+
+- *`general_crm.json` was generated from the original seed constants rather than written by
+  hand, so it reproduces the old behaviour exactly. `app/database/seed.py` is now deleted.*
+- *`Setting.value` is typed as a dict everywhere, so a bare string setting fails response
+  validation — the Vahan URL had to be nested.*
+- *Test fixtures now build tenants through `apply_template()` instead of hand-rolling roles
+  and stages, so they exercise the real provisioning path.*
 
 **Goal.** You can create a client from the platform console, pick General CRM or Insurance Agent, and they
 get a working, correctly-configured CRM.

@@ -1,0 +1,575 @@
+{
+  "key": "insurance_agent",
+  "name": "Insurance Agent",
+  "version": 1,
+  "description": "For an insurance agent or agency: customers instead of contacts, an enquiry-to-policy pipeline, insurer and bank masters, and renewal-focused reporting. Policies, Poster Studio and Loans arrive in later phases.",
+  "modules": [
+    {
+      "key": "dashboard",
+      "enabled": true,
+      "label": "Dashboard",
+      "order": 1
+    },
+    {
+      "key": "contacts",
+      "enabled": true,
+      "label": "Customers",
+      "order": 2
+    },
+    {
+      "key": "leads",
+      "enabled": true,
+      "label": "Enquiries",
+      "order": 3
+    },
+    {
+      "key": "deals",
+      "enabled": true,
+      "label": "Opportunities",
+      "order": 4
+    },
+    {
+      "key": "pipeline",
+      "enabled": true,
+      "label": "Pipeline",
+      "order": 5
+    },
+    {
+      "key": "calendar",
+      "enabled": true,
+      "label": "Calendar",
+      "order": 6
+    },
+    {
+      "key": "tasks",
+      "enabled": true,
+      "label": "Tasks",
+      "order": 7
+    },
+    {
+      "key": "quotations",
+      "enabled": true,
+      "label": "Quotations",
+      "order": 8
+    },
+    {
+      "key": "products",
+      "enabled": true,
+      "label": "Plans",
+      "order": 9
+    },
+    {
+      "key": "reports",
+      "enabled": true,
+      "label": "Reports",
+      "order": 10
+    },
+    {
+      "key": "settings",
+      "enabled": true,
+      "label": "Settings",
+      "order": 11
+    },
+    {
+      "key": "companies",
+      "enabled": false,
+      "label": "Companies",
+      "order": 12
+    },
+    {
+      "key": "invoices",
+      "enabled": false,
+      "label": "Invoices",
+      "order": 13
+    },
+    {
+      "key": "projects",
+      "enabled": false,
+      "label": "Projects",
+      "order": 14
+    },
+    {
+      "key": "support",
+      "enabled": false,
+      "label": "Support",
+      "order": 15
+    }
+  ],
+  "roles": [
+    {
+      "name": "Super Admin",
+      "description": "Full access to the agency workspace",
+      "permissions": [
+        "*"
+      ]
+    },
+    {
+      "name": "Agency Admin",
+      "description": "Administers the agency, its users and settings",
+      "permissions": [
+        "users:read",
+        "users:write",
+        "users:delete",
+        "roles:read",
+        "roles:write",
+        "roles:delete",
+        "companies:read",
+        "companies:write",
+        "companies:delete",
+        "contacts:read",
+        "contacts:write",
+        "contacts:delete",
+        "leads:read",
+        "leads:write",
+        "leads:delete",
+        "deals:read",
+        "deals:write",
+        "deals:delete",
+        "activities:read",
+        "activities:write",
+        "activities:delete",
+        "tasks:read",
+        "tasks:write",
+        "tasks:delete",
+        "calendar:read",
+        "calendar:write",
+        "calendar:delete",
+        "products:read",
+        "products:write",
+        "products:delete",
+        "quotations:read",
+        "quotations:write",
+        "quotations:delete",
+        "invoices:read",
+        "invoices:write",
+        "invoices:delete",
+        "projects:read",
+        "projects:write",
+        "projects:delete",
+        "support:read",
+        "support:write",
+        "support:delete",
+        "documents:read",
+        "documents:write",
+        "documents:delete",
+        "reports:read",
+        "reports:write",
+        "reports:delete",
+        "settings:read",
+        "settings:write",
+        "settings:delete"
+      ]
+    },
+    {
+      "name": "Agent",
+      "description": "Works enquiries, customers, policies and renewals",
+      "permissions": [
+        "companies:read",
+        "companies:write",
+        "contacts:read",
+        "contacts:write",
+        "leads:read",
+        "leads:write",
+        "deals:read",
+        "deals:write",
+        "activities:read",
+        "activities:write",
+        "tasks:read",
+        "tasks:write",
+        "calendar:read",
+        "calendar:write",
+        "products:read",
+        "products:write",
+        "quotations:read",
+        "quotations:write",
+        "documents:read",
+        "documents:write",
+        "reports:read",
+        "reports:write"
+      ]
+    },
+    {
+      "name": "Senior Agent",
+      "description": "An agent who can also delete records and see all reports",
+      "permissions": [
+        "companies:read",
+        "companies:write",
+        "companies:delete",
+        "contacts:read",
+        "contacts:write",
+        "contacts:delete",
+        "leads:read",
+        "leads:write",
+        "leads:delete",
+        "deals:read",
+        "deals:write",
+        "deals:delete",
+        "activities:read",
+        "activities:write",
+        "activities:delete",
+        "tasks:read",
+        "tasks:write",
+        "tasks:delete",
+        "calendar:read",
+        "calendar:write",
+        "calendar:delete",
+        "products:read",
+        "products:write",
+        "products:delete",
+        "quotations:read",
+        "quotations:write",
+        "quotations:delete",
+        "documents:read",
+        "documents:write",
+        "documents:delete",
+        "reports:read",
+        "reports:write",
+        "reports:delete",
+        "users:read",
+        "invoices:read"
+      ]
+    },
+    {
+      "name": "Back Office",
+      "description": "Policy data entry, documents and renewal chasing",
+      "permissions": [
+        "contacts:read",
+        "contacts:write",
+        "tasks:read",
+        "tasks:write",
+        "activities:read",
+        "activities:write",
+        "calendar:read",
+        "calendar:write",
+        "documents:read",
+        "documents:write",
+        "leads:read",
+        "deals:read",
+        "quotations:read",
+        "products:read",
+        "reports:read"
+      ]
+    },
+    {
+      "name": "Accounts",
+      "description": "Premium, commission and payment reporting",
+      "permissions": [
+        "quotations:read",
+        "quotations:write",
+        "quotations:delete",
+        "invoices:read",
+        "invoices:write",
+        "invoices:delete",
+        "products:read",
+        "products:write",
+        "products:delete",
+        "reports:read",
+        "reports:write",
+        "reports:delete",
+        "contacts:read",
+        "deals:read",
+        "documents:read"
+      ]
+    },
+    {
+      "name": "Viewer",
+      "description": "Read-only access",
+      "permissions": [
+        "users:read",
+        "roles:read",
+        "companies:read",
+        "contacts:read",
+        "leads:read",
+        "deals:read",
+        "activities:read",
+        "tasks:read",
+        "calendar:read",
+        "products:read",
+        "quotations:read",
+        "invoices:read",
+        "projects:read",
+        "support:read",
+        "documents:read",
+        "reports:read",
+        "settings:read"
+      ]
+    }
+  ],
+  "stages": [
+    {
+      "name": "New enquiry",
+      "order": 1,
+      "probability": 10,
+      "is_won": false,
+      "is_lost": false
+    },
+    {
+      "name": "Contacted",
+      "order": 2,
+      "probability": 25,
+      "is_won": false,
+      "is_lost": false
+    },
+    {
+      "name": "Quote shared",
+      "order": 3,
+      "probability": 45,
+      "is_won": false,
+      "is_lost": false
+    },
+    {
+      "name": "Negotiation",
+      "order": 4,
+      "probability": 60,
+      "is_won": false,
+      "is_lost": false
+    },
+    {
+      "name": "Documents collected",
+      "order": 5,
+      "probability": 75,
+      "is_won": false,
+      "is_lost": false
+    },
+    {
+      "name": "Payment pending",
+      "order": 6,
+      "probability": 90,
+      "is_won": false,
+      "is_lost": false
+    },
+    {
+      "name": "Policy issued",
+      "order": 7,
+      "probability": 100,
+      "is_won": true,
+      "is_lost": false
+    },
+    {
+      "name": "Lost",
+      "order": 8,
+      "probability": 0,
+      "is_won": false,
+      "is_lost": true
+    }
+  ],
+  "lead_sources": [
+    "Walk-in",
+    "Referral",
+    "Existing customer",
+    "Website",
+    "Social media",
+    "Cold call",
+    "Bank channel",
+    "Renewal due",
+    "Advertisement",
+    "Other"
+  ],
+  "tags": [
+    {
+      "name": "Motor",
+      "color": "#2563EB"
+    },
+    {
+      "name": "Health",
+      "color": "#059669"
+    },
+    {
+      "name": "Life",
+      "color": "#7C3AED"
+    },
+    {
+      "name": "General",
+      "color": "#D97706"
+    },
+    {
+      "name": "Loan",
+      "color": "#DC2626"
+    },
+    {
+      "name": "High value",
+      "color": "#DB2777"
+    }
+  ],
+  "settings": {
+    "company_profile": {
+      "name": "Insurance Agency",
+      "website": "",
+      "email": "",
+      "phone": "",
+      "address": "",
+      "logo_url": ""
+    },
+    "branding": {
+      "primary_color": "#4F46E5",
+      "app_name": "Insurance CRM"
+    },
+    "counters": {
+      "quotation": 0,
+      "invoice": 0,
+      "ticket": 0
+    },
+    "notification_settings": {
+      "email_on_lead_assign": true,
+      "email_on_task_assign": true
+    },
+    "quotation_template": {
+      "title": "INSURANCE QUOTATION",
+      "number_prefix": "QT",
+      "accent_color": "#4F46E5",
+      "layout": "modern",
+      "font": "helvetica",
+      "label_item": "Item & Description",
+      "label_quantity": "Qty",
+      "label_rate": "Rate",
+      "label_tax": "Tax %",
+      "label_amount": "Amount",
+      "show_tax_column": true,
+      "show_signature": true,
+      "show_logo": true,
+      "signature_label": "Authorized Signatory",
+      "bank_details": "",
+      "footer_note": "Thank you for your business.",
+      "default_terms": "Premium quoted is indicative and subject to insurer underwriting. Cover begins only after the premium is realised and the policy is issued."
+    },
+    "invoice_template": {
+      "title": "INVOICE",
+      "number_prefix": "INV",
+      "accent_color": "#4F46E5",
+      "layout": "modern",
+      "font": "helvetica",
+      "label_item": "Item & Description",
+      "label_quantity": "Qty",
+      "label_rate": "Rate",
+      "label_tax": "Tax %",
+      "label_amount": "Amount",
+      "show_tax_column": true,
+      "show_signature": true,
+      "show_logo": true,
+      "signature_label": "Authorized Signatory",
+      "bank_details": "",
+      "footer_note": "Thank you for your business.",
+      "default_notes": ""
+    },
+    "features": {
+      "whatsapp_click_to_chat": true,
+      "whatsapp_api": false,
+      "aadhaar_full_capture": false,
+      "pan_required": true,
+      "vahan_portal": true
+    },
+    "vahan_portal": {
+      "enabled": true,
+      "url": "https://vahan.parivahan.gov.in/nrservices/faces/user/searchstatus.xhtml",
+      "label": "Vahan Portal"
+    }
+  },
+  "email_templates": [
+    {
+      "name": "welcome",
+      "subject": "Welcome to {app_name}",
+      "body_html": "<div style=\"font-family:Arial,Helvetica,sans-serif;color:#0f172a;line-height:1.6\">{logo_html}<p>Hi {first_name},</p><p>Your <b>{app_name}</b> account is ready. Sign in with <b>{email}</b>.</p><p style=\"margin:22px 0\"><a href=\"{app_url}\" style=\"display:inline-block;background:#4F46E5;color:#ffffff;text-decoration:none;padding:11px 22px;border-radius:8px;font-weight:600\">Open {app_name}</a></p><p style=\"color:#64748b;font-size:13px\">Or paste this link into your browser: <a href=\"{app_url}\" style=\"color:#4F46E5\">{app_url}</a></p></div>",
+      "description": "Sent when a new user account is created"
+    },
+    {
+      "name": "password_reset",
+      "subject": "Reset your {app_name} password",
+      "body_html": "<p>Hi {first_name},</p><p>Use this link to reset your password: <a href='{reset_link}'>Reset password</a>. It expires in 30 minutes.</p>",
+      "description": "Password reset link"
+    },
+    {
+      "name": "lead_assigned",
+      "subject": "New enquiry assigned: {lead_title}",
+      "body_html": "<p>Hi {first_name},</p><p>The lead <b>{lead_title}</b> has been assigned to you.</p>",
+      "description": "Sent when an enquiry is assigned to an agent"
+    },
+    {
+      "name": "quotation",
+      "subject": "Quotation {number} from {company_name}",
+      "body_html": "<p>Dear {contact_name},</p><p>Please find attached quotation <b>{number}</b> totalling <b>{total}</b>.</p>",
+      "description": "Sent with a quotation PDF"
+    },
+    {
+      "name": "renewal_reminder",
+      "subject": "Your policy {policy_number} is due for renewal",
+      "body_html": "<p>Dear {customer_name},</p><p>Your policy <b>{policy_number}</b> with {insurer} expires on <b>{expiry_date}</b>. Reply to this email or call {agent_mobile} and we will take care of the renewal.</p>",
+      "description": "Sent ahead of a policy expiry date"
+    },
+    {
+      "name": "birthday_wish",
+      "subject": "Happy birthday, {customer_name}!",
+      "body_html": "<p>Dear {customer_name},</p><p>Wishing you a very happy birthday and a wonderful year ahead.</p><p>&mdash; {agent_name}, {agency_name}</p>",
+      "description": "Birthday greeting"
+    }
+  ],
+  "masters": {
+    "insurers": [
+      "HDFC ERGO",
+      "ICICI Lombard",
+      "Bajaj Allianz",
+      "TATA AIG",
+      "New India Assurance",
+      "United India",
+      "Oriental Insurance",
+      "National Insurance",
+      "Reliance General",
+      "SBI General",
+      "Star Health",
+      "Care Health",
+      "Niva Bupa",
+      "LIC",
+      "HDFC Life",
+      "ICICI Prudential",
+      "SBI Life",
+      "Max Life"
+    ],
+    "product_types": [
+      "Motor - Private Car",
+      "Motor - Two Wheeler",
+      "Motor - Commercial",
+      "Health - Individual",
+      "Health - Family Floater",
+      "Health - Top Up",
+      "Life - Term",
+      "Life - Endowment",
+      "Life - ULIP",
+      "Personal Accident",
+      "Travel",
+      "Fire",
+      "Shop",
+      "Marine"
+    ],
+    "banks": [
+      "HDFC Bank",
+      "ICICI Bank",
+      "State Bank of India",
+      "Axis Bank",
+      "Kotak Mahindra Bank",
+      "IndusInd Bank",
+      "Federal Bank",
+      "Canara Bank",
+      "Union Bank of India",
+      "Direct / Non-bank"
+    ],
+    "relations": [
+      "Spouse",
+      "Son",
+      "Daughter",
+      "Father",
+      "Mother",
+      "Brother",
+      "Sister",
+      "Grandson",
+      "Granddaughter",
+      "Nominee - Other"
+    ],
+    "loan_types": [
+      "Home Loan",
+      "Personal Loan",
+      "Vehicle Loan",
+      "Business Loan",
+      "Loan Against Property",
+      "Education Loan"
+    ]
+  }
+}

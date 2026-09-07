@@ -17,7 +17,10 @@ export interface User {
   theme: string;
   last_login_at?: string | null;
   created_at: string;
-  role: Role;
+  /** Null for a platform Super Admin, who has no tenant role. */
+  role: Role | null;
+  /** Platform Super Admins get the console at /platform, not the CRM. */
+  is_platform_admin: boolean;
 }
 
 export interface UserBrief {
@@ -318,4 +321,69 @@ export interface EmailTemplate {
   description?: string | null;
   updated_at: string;
   variables?: TemplateVariable[];
+}
+
+
+// --- platform / multi-tenancy -------------------------------------------------
+
+/** One module in the current workspace's sidebar, as configured for this tenant. */
+export interface TenantModule {
+  id: string;
+  module_key: string;
+  /** What this tenant calls it — "Contacts" or "Customers" for the same module. */
+  label: string;
+  enabled: boolean;
+  order: number;
+  route: string;
+  icon: string;
+  permission: string | null;
+  locked: boolean;
+}
+
+export type TenantStatus = "provisioning" | "trial" | "active" | "suspended" | "deleted";
+
+export interface Tenant {
+  id: string;
+  name: string;
+  slug: string;
+  type: "company" | "individual";
+  status: TenantStatus;
+  template_key: string;
+  plan: string;
+  timezone: string;
+  currency: string;
+  locale: string;
+  owner_user_id?: string | null;
+  created_at: string;
+  suspended_at?: string | null;
+}
+
+export interface TenantDetail extends Tenant {
+  user_count: number;
+  settings: Record<string, unknown>;
+}
+
+export interface CrmTemplate {
+  id: string;
+  key: string;
+  name: string;
+  description?: string | null;
+  version: number;
+  is_system: boolean;
+  module_count: number;
+  enabled_module_count: number;
+  role_count: number;
+  stage_count: number;
+}
+
+export interface CrmTemplateDetail extends CrmTemplate {
+  config: Record<string, any>;
+}
+
+export interface PlatformStats {
+  tenants_total: number;
+  tenants_active: number;
+  tenants_suspended: number;
+  users_total: number;
+  by_template: Record<string, number>;
 }

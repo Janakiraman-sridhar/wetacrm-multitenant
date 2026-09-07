@@ -1,10 +1,6 @@
 import clsx from "clsx";
-import {
-  Building2, Calendar, ChartColumnBig, ChevronLeft, FileText, FolderKanban, Handshake,
-  LayoutDashboard, LifeBuoy, ListTodo, LogOut, Menu, Moon, Package, Receipt, Settings,
-  SquareKanban, Sun, Target, UsersRound,
-} from "lucide-react";
-import { useState } from "react";
+import { ChevronLeft, LogOut, Menu, Moon, ShieldCheck, Sun, X } from "lucide-react";
+import { useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 
 import logoMark from "@/assets/logo-mark.png";
@@ -14,35 +10,37 @@ import { NotificationsBell } from "@/components/NotificationsPanel";
 import { Avatar } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
+import { moduleIcon, useModules } from "@/lib/modules";
 
-const NAV = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard, perm: null },
-  { to: "/companies", label: "Companies", icon: Building2, perm: "companies:read" },
-  { to: "/contacts", label: "Contacts", icon: UsersRound, perm: "contacts:read" },
-  { to: "/leads", label: "Leads", icon: Target, perm: "leads:read" },
-  { to: "/deals", label: "Deals", icon: Handshake, perm: "deals:read" },
-  { to: "/pipeline", label: "Pipeline", icon: SquareKanban, perm: "deals:read" },
-  { to: "/calendar", label: "Calendar", icon: Calendar, perm: "calendar:read" },
-  { to: "/tasks", label: "Tasks", icon: ListTodo, perm: "tasks:read" },
-  { to: "/projects", label: "Projects", icon: FolderKanban, perm: "projects:read" },
-  { to: "/products", label: "Products", icon: Package, perm: "products:read" },
-  { to: "/quotations", label: "Quotations", icon: FileText, perm: "quotations:read" },
-  { to: "/invoices", label: "Invoices", icon: Receipt, perm: "invoices:read" },
-  { to: "/support", label: "Support", icon: LifeBuoy, perm: "support:read" },
-  { to: "/reports", label: "Reports", icon: ChartColumnBig, perm: "reports:read" },
-  { to: "/settings", label: "Settings", icon: Settings, perm: "settings:read" },
-];
-
-const CRUMBS: Record<string, string> = Object.fromEntries(NAV.map((n) => [n.to, n.label]));
-
+/**
+ * The sidebar is built from `/api/v1/modules`, not a list in this file.
+ *
+ * That is what lets one tenant see "Contacts" where another sees "Customers", and
+ * lets a module be switched off per client — both without a code change. Module
+ * keys stay stable; only the label and visibility vary.
+ */
 export function AppLayout() {
-  const { user, logout, hasPerm } = useAuth();
+  const { user, logout, hasPerm, impersonating, impersonatedTenant, exitImpersonation } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
+  const { data: modules } = useModules();
 
-  const nav = NAV.filter((n) => !n.perm || hasPerm(n.perm));
+  // Two filters, both needed: the tenant decides which modules exist at all, the
+  // user's role decides which of those they may see.
+  const nav = useMemo(
+    () =>
+      (modules ?? [])
+        .filter((m) => !m.permission || hasPerm(m.permission))
+        .map((m) => ({ to: m.route, label: m.label, icon: moduleIcon(m.icon) })),
+    [modules, hasPerm]
+  );
+
+  const crumbs = useMemo(
+    () => Object.fromEntries((modules ?? []).map((m) => [m.route, m.label])),
+    [modules]
+  );
 
   const sidebar = (
     <aside
@@ -89,10 +87,29 @@ export function AppLayout() {
     </aside>
   );
 
-  const crumb = CRUMBS[`/${location.pathname.split("/")[1]}`] ?? CRUMBS[location.pathname] ?? "Dashboard";
+  const crumb =
+    crumbs[`/${location.pathname.split("/")[1]}`] ?? crumbs[location.pathname] ?? "Dashboard";
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen flex-col overflow-hidden">
+      {/* Support session: make it impossible to forget whose data you are looking at. */}
+      {impersonating && (
+        <div className="flex shrink-0 items-center justify-center gap-3 bg-amber-500 px-4 py-1.5 text-sm font-medium text-amber-950">
+          <ShieldCheck size={15} />
+          <span>
+            Viewing <strong>{impersonatedTenant}</strong> as a support session. Actions are recorded
+            against your platform account.
+          </span>
+          <button
+            onClick={exitImpersonation}
+            className="ml-2 inline-flex items-center gap-1 rounded-md bg-amber-950/10 px-2 py-0.5 text-xs font-semibold transition-colors hover:bg-amber-950/20"
+          >
+            <X size={12} /> Exit
+          </button>
+        </div>
+      )}
+
+      <div className="flex min-h-0 flex-1 overflow-hidden">
       {/* Desktop sidebar */}
       <div className="hidden lg:block">{sidebar}</div>
       {/* Mobile sidebar */}
@@ -139,6 +156,7 @@ export function AppLayout() {
         <main className="flex-1 overflow-y-auto p-4 lg:p-6">
           <Outlet />
         </main>
+      </div>
       </div>
     </div>
   );

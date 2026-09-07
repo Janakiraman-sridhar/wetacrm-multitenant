@@ -67,3 +67,33 @@ class PlatformStatsOut(BaseModel):
     tenants_suspended: int
     users_total: int
     by_template: dict[str, int]
+
+
+class TemplateOut(ORMModel):
+    id: str
+    key: str
+    name: str
+    description: str | None = None
+    version: int
+    is_system: bool
+    module_count: int = 0
+    enabled_module_count: int = 0
+    role_count: int = 0
+    stage_count: int = 0
+
+
+class TemplateDetailOut(TemplateOut):
+    config: dict = {}
+
+
+class TemplateClone(BaseModel):
+    key: str = Field(min_length=2, max_length=50, pattern=r"^[a-z0-9_]+$")
+    name: str = Field(min_length=2, max_length=150)
+    description: str | None = None
+
+
+class TenantModuleUpdate(BaseModel):
+    module_key: str
+    label: str | None = Field(default=None, min_length=1, max_length=100)
+    enabled: bool | None = None
+    order: int | None = None

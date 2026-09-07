@@ -101,6 +101,7 @@ def apply_template(db: Session, tenant_id: str, config: TemplateConfig) -> None:
     _apply_tags(db, config)
     _apply_settings(db, config)
     _apply_masters(db, config)
+    _apply_poster_presets(db, config)
     _apply_email_templates(db, config)
     db.flush()
 
@@ -202,6 +203,15 @@ def _apply_masters(db: Session, config: TemplateConfig) -> None:
         for order, name in enumerate(names):
             if (singular, name) not in existing:
                 db.add(Master(type=singular, name=name, order=order))
+
+
+def _apply_poster_presets(db: Session, config: TemplateConfig) -> None:
+    """Starter poster designs, for templates that switch the studio on."""
+    if not (config.settings.get("features") or {}).get("poster_studio", True):
+        return
+    from app.poster.service import seed_presets
+
+    seed_presets(db)
 
 
 def _apply_email_templates(db: Session, config: TemplateConfig) -> None:

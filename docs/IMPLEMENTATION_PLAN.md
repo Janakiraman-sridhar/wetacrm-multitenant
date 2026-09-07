@@ -214,7 +214,20 @@ them.
 
 ---
 
-## Phase 5 — WhatsApp and Poster Studio
+## Phase 5 — WhatsApp and Poster Studio ✅ COMPLETE
+
+*Delivered. 212 tests pass. Verified by generating real posters and looking at them —
+which is how both output bugs were found. Notes:*
+
+- *Rendering is server-side (Pillow) rather than the planned client-side fabric.js, so
+  one renderer serves the preview, the batch and the send. A client-side preview would
+  drift from the file the customer receives.*
+- *A merge field resolving to empty left a button reading just "Call". Fixed with
+  `is_hollow()`; the empty background pill that remained needed `"requires"` on the
+  layer as well. Neither showed up in a test — only in the rendered image.*
+- *5.6–5.8 (Cloud API, message log, queue) are built and unit-tested behind the
+  provider interface, but cannot be verified end to end without a verified Meta
+  Business account. Click-to-chat needs none and is fully working.*
 
 **Goal.** The agent can reach customers, with branded creatives.
 

@@ -29,6 +29,7 @@ from app.platform.modules_router import router as modules_router
 from app.platform.router import router as platform_router
 from app.platform.schema_router import router as schema_router
 from app.policies.router import router as policies_router
+from app.poster.router import router as poster_router
 from app.products.router import router as products_router
 from app.projects.router import router as projects_router
 from app.quotations.router import router as quotations_router
@@ -100,6 +101,7 @@ app.include_router(platform_router, prefix=API_V1)
 app.include_router(modules_router, prefix=API_V1)
 app.include_router(schema_router, prefix=API_V1)
 app.include_router(policies_router, prefix=API_V1)
+app.include_router(poster_router, prefix=API_V1)
 
 
 @app.get("/health")

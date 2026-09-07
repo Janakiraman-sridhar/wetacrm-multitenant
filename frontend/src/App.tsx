@@ -15,6 +15,7 @@ import Login from "@/pages/Login";
 import ResetPassword from "@/pages/ResetPassword";
 import Pipeline from "@/pages/Pipeline";
 import Policies from "@/pages/Policies";
+import PosterStudio from "@/pages/PosterStudio";
 import Products from "@/pages/Products";
 import Projects from "@/pages/Projects";
 import Quotations from "@/pages/Quotations";
@@ -92,6 +93,7 @@ export default function App() {
         <Route path="leads" element={<Leads />} />
         <Route path="deals" element={<Deals />} />
         <Route path="policies" element={<Policies />} />
+        <Route path="poster" element={<PosterStudio />} />
         <Route path="pipeline" element={<Pipeline />} />
         <Route path="calendar" element={<CalendarPage />} />
         <Route path="tasks" element={<Tasks />} />

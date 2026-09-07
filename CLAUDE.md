@@ -45,7 +45,7 @@ cd backend && .venv/Scripts/python.exe -m pytest          # all
 ```
 
 `backend/tests/` holds the tenant-isolation (Phase 0), template/provisioning (Phase 1)
-custom-field (Phase 2), customer-PII (Phase 3) and policy (Phase 4) suites — 180 tests. Install
+custom-field (Phase 2), customer-PII (Phase 3), policy (Phase 4) and poster/WhatsApp (Phase 5) suites — 212 tests. Install
 test deps with `pip install -r requirements-dev.txt`. There is no frontend test suite;
 `npm run build` (which runs `tsc -b`) is the only typecheck gate.
 
@@ -166,6 +166,42 @@ render details the server cannot know, like which hook supplies a select's optio
 `useSchemaOverlay` in `CrudPage` layers the tenant's relabels, hides and custom fields on
 top. Custom form values are named `custom.<key>`, which react-hook-form nests into
 exactly the shape the API wants.
+
+### Posters — one renderer, and layers that know what they need
+
+`app/poster/render.py` renders a design from a layer spec, and **everything goes
+through it** — the editor preview, batch output, whatever is sent. A separate
+client-side preview would drift the first time a font fell back or a line wrapped,
+and the agent would find out from the customer. The editor therefore previews by
+POSTing the unsaved spec to `/poster/preview` and showing the PNG that comes back.
+
+Two rules keep half-rendered output away from customers:
+
+- `is_hollow()` drops a text layer whose merge placeholders **all** resolved empty —
+  "Call {agent_mobile}" with no number would otherwise render a button reading "Call".
+- `"requires": "agent_mobile"` on any layer skips it when that field is empty, which
+  is how a button's *background* disappears along with its label rather than being
+  left as an empty coloured pill.
+
+Both were found by looking at a rendered poster, not by a test. Look at the output.
+
+Fonts resolve through a candidate list (Linux paths first for Docker, then Windows);
+a missing font falls back to Pillow's bitmap default and logs loudly. Add
+`fonts-dejavu-core` to the backend image.
+
+### WhatsApp — two channels, one interface
+
+**Click-to-chat** is a `wa.me` link: the agent's own WhatsApp opens with the message
+prefilled and *they* press send. No approvals, no fees, no verification — the default,
+and why an agency can use this on day one. `/whatsapp/link` returns the link *and*
+records it, because the workspace still needs to know a customer was already messaged.
+
+**The Cloud API** sends from the server and needs a verified Meta Business account,
+a dedicated number, and pre-approved templates for anything outside a 24-hour reply
+window. Configured per tenant; absent, `provider_for()` returns `NullProvider`, which
+**always reports failure** rather than pretending — a caller must never be told a
+message was sent when nothing left the building. Nothing provider-specific escapes
+`WhatsAppProvider`, so a BSP swap is a subclass plus a settings change.
 
 ### Policies — status is derived, renewal is a new row
 

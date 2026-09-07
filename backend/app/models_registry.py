@@ -14,6 +14,7 @@ from app.meetings import models as meetings_models  # noqa: F401
 from app.notifications import models as notifications_models  # noqa: F401
 from app.platform import fields as platform_fields  # noqa: F401
 from app.policies import models as policies_models  # noqa: F401
+from app.poster import models as poster_models  # noqa: F401
 from app.platform import models as platform_models  # noqa: F401
 from app.products import models as products_models  # noqa: F401
 from app.projects import models as projects_models  # noqa: F401

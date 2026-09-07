@@ -1,7 +1,7 @@
 {
   "key": "insurance_agent",
   "name": "Insurance Agent",
-  "version": 2,
+  "version": 3,
   "description": "For an insurance agent or agency: customers instead of contacts, an enquiry-to-policy pipeline, insurer and bank masters, and renewal-focused reporting. Policies, Poster Studio and Loans arrive in later phases.",
   "modules": [
     {
@@ -20,55 +20,55 @@
       "key": "leads",
       "enabled": true,
       "label": "Enquiries",
-      "order": 4
+      "order": 5
     },
     {
       "key": "deals",
       "enabled": true,
       "label": "Opportunities",
-      "order": 5
+      "order": 6
     },
     {
       "key": "pipeline",
       "enabled": true,
       "label": "Pipeline",
-      "order": 6
+      "order": 7
     },
     {
       "key": "calendar",
       "enabled": true,
       "label": "Calendar",
-      "order": 7
+      "order": 8
     },
     {
       "key": "tasks",
       "enabled": true,
       "label": "Tasks",
-      "order": 8
+      "order": 9
     },
     {
       "key": "quotations",
       "enabled": true,
       "label": "Quotations",
-      "order": 9
+      "order": 10
     },
     {
       "key": "products",
       "enabled": true,
       "label": "Plans",
-      "order": 10
+      "order": 11
     },
     {
       "key": "reports",
       "enabled": true,
       "label": "Reports",
-      "order": 11
+      "order": 12
     },
     {
       "key": "settings",
       "enabled": true,
       "label": "Settings",
-      "order": 12
+      "order": 13
     },
     {
       "key": "companies",
@@ -99,6 +99,12 @@
       "enabled": true,
       "label": "Policies",
       "order": 3
+    },
+    {
+      "key": "poster",
+      "enabled": true,
+      "label": "Poster Studio",
+      "order": 4
     }
   ],
   "roles": [
@@ -474,7 +480,8 @@
       "whatsapp_api": false,
       "aadhaar_full_capture": false,
       "pan_required": true,
-      "vahan_portal": true
+      "vahan_portal": true,
+      "poster_studio": true
     },
     "vahan_portal": {
       "enabled": true,

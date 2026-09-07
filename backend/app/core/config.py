@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     # Run `alembic upgrade head` automatically on startup. Convenient in dev;
     # turn off in production if migrations are applied by the deploy pipeline.
     auto_migrate: bool = True
+    #: How long a soft-deleted tenant is kept before the purge job removes it. The
+    #: console tells an admin 30 days; changing this changes what that promise means.
+    tenant_retention_days: int = 30
 
     redis_url: str = ""
     meili_url: str = ""

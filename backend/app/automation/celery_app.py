@@ -55,4 +55,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.automation.tasks.reindex_search",
         "schedule": crontab(hour=2, minute=0),
     },
+    # Weekly, not nightly: this one is irreversible, and a job that destroys data
+    # should run rarely enough that a bad deploy is noticed before it runs twice.
+    "purge-deleted-tenants-weekly": {
+        "task": "app.automation.tasks.purge_deleted_tenants",
+        "schedule": crontab(hour=4, minute=0, day_of_week=0),
+    },
 }

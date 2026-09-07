@@ -106,3 +106,20 @@ def search_all(query: str, limit: int = 5) -> dict[str, list[dict]] | None:
         return results
     except Exception:
         return None
+
+
+def remove_tenant(tenant_id: str) -> None:
+    """Drop every document belonging to one tenant, across every index.
+
+    Called when a tenant is purged. Without it their names and titles would keep
+    turning up in the index long after the rows were gone — and Meilisearch is the
+    one store that is not covered by deleting database rows.
+    """
+    client = get_client()
+    if not client:
+        return
+    for index in INDEXES:
+        try:
+            client.index(index).delete_documents(filter=f'tenant_id = "{tenant_id}"')
+        except Exception:
+            log.exception("Could not clear %s for tenant %s", index, tenant_id)

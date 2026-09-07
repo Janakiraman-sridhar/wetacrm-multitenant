@@ -177,6 +177,12 @@ def worlds(client) -> dict[str, TenantWorld]:
     return built
 
 
+@pytest.fixture()
+def admin_headers(platform_admin_token) -> dict[str, str]:
+    """Signed-in platform Super Admin, for console endpoints."""
+    return {"Authorization": f"Bearer {platform_admin_token}"}
+
+
 @pytest.fixture(autouse=True)
 def _clear_rate_limits():
     """The login limiter is in-memory and keyed by IP, and every test shares one IP.

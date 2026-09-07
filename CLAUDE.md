@@ -355,6 +355,16 @@ migrations that change one need batch mode — and because SQLite renders `uniqu
 *unnamed* constraint that batch mode cannot drop, `0002_multitenant` reflects the table, discards the
 constraint from the reflected definition, and passes it as `copy_from`. Reuse that pattern.
 
+**Deleting a tenant is reversible for `TENANT_RETENTION_DAYS` (30), then it is not.**
+`app/platform/purge.py` empties every tenant-scoped table in reverse dependency
+order, removes the tenant's storage prefix and its search documents, and deletes the
+tenant row. It deliberately does *not* lean on `ON DELETE CASCADE` from `tenants.id`:
+that works on Postgres and silently does nothing on SQLite unless foreign keys are
+enabled, and a purge that reports success while leaving everything behind is the
+worst available outcome. A weekly Celery job runs it; the console lists what is in
+the window and can purge one immediately (slug typed to confirm) for a
+"delete my data now" request.
+
 **Deleting a tenant releases its email addresses.** `users.email` is globally unique —
 that is what lets the sign-in screen work without a workspace picker — so a soft-deleted
 tenant would otherwise hold its owner's address for the whole retention window, and

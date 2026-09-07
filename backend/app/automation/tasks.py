@@ -247,3 +247,38 @@ def _create_renewal_tasks_for_tenant(db) -> int:
     if created:
         db.commit()
     return created
+
+
+@celery_app.task
+def purge_deleted_tenants() -> int:
+    """Remove workspaces whose retention window has passed. Irreversible.
+
+    The console promises a deleted workspace is kept for 30 days and then removed.
+    This is what makes the second half of that true.
+
+    Each tenant is purged independently: one failing (storage unreachable, say)
+    must not stop the rest, and a tenant that fails part-way is left soft-deleted
+    so the next run picks it up again.
+    """
+    from app.platform import purge
+
+    purged = 0
+    with SessionLocal() as db:
+        try:
+            due = purge.tenants_due_for_purge(db)
+        except ValueError:
+            log.exception("Retention window is misconfigured; purging nothing")
+            return 0
+
+        for tenant in due:
+            try:
+                summary = purge.purge_tenant(db, tenant)
+                log.warning(
+                    "Purged %s after retention: %s rows, %s files",
+                    summary["slug"], sum(summary["rows"].values()), summary["files_removed"],
+                )
+                purged += 1
+            except Exception:
+                log.exception("Could not purge tenant %s; it stays for the next run", tenant.slug)
+                db.rollback()
+    return purged

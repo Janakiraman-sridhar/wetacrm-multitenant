@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { Modal } from "@/components/Modal";
+import { DeletedTenants } from "@/platform/DeletedTenants";
 import { Select } from "@/components/Select";
 import { useToast } from "@/context/ToastContext";
 import { api, errorMessage } from "@/lib/api";
@@ -186,6 +187,8 @@ export default function Tenants() {
           </table>
         </div>
       </div>
+
+      <DeletedTenants />
 
       <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="New tenant" wide>
         <div className="space-y-5">

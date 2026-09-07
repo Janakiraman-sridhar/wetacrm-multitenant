@@ -9,7 +9,7 @@ A platform admin has no route into a tenant's own CRM: there is no impersonation
 admin can do to a workspace — its modules, its template, its status — is done from here.
 """
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -63,7 +63,14 @@ def create_tenant(
         # no idea where is a dead end for whoever is looking at the screen.
         with platform_scope():
             holder = db.get(Tenant, clash.tenant_id) if clash.tenant_id else None
-        where = f" in {holder.name}" if holder else " by a platform administrator"
+        if holder is not None:
+            where = f" in {holder.name}"
+        elif clash.is_platform_admin:
+            where = " by a platform administrator"
+        else:
+            # A user whose tenant row is gone: not a live workspace, not an admin.
+            # Naming it as either would send someone looking in the wrong place.
+            where = " left over from a removed workspace"
         raise AppError(f"That email already belongs to a user{where}", 409)
 
     slug = service.unique_slug(db, payload.slug or service.slugify(payload.name))
@@ -179,6 +186,78 @@ def delete_tenant(
         )
         db.commit()
     return {"detail": "Tenant deleted"}
+
+
+# --- retention -----------------------------------------------------------------
+
+@router.get("/deleted-tenants")
+def deleted_tenants(db: Session = Depends(get_db), admin: User = Depends(get_platform_admin)):
+    """Workspaces awaiting purge, and how long each has left.
+
+    Deletion is reversible only while the row is still here, so the console needs a
+    way to see what is in the window rather than discovering it is gone.
+    """
+    from app.platform import purge
+
+    with platform_scope():
+        rows = list(
+            db.scalars(
+                select(Tenant).where(Tenant.deleted_at.isnot(None)).order_by(Tenant.deleted_at)
+            ).all()
+        )
+    now = utcnow()
+    retention = settings.tenant_retention_days
+    return [
+        {
+            "id": t.id,
+            "name": t.name,
+            "slug": t.slug,
+            "deleted_at": t.deleted_at,
+            "days_until_purge": max(0, retention - (now - t.deleted_at).days),
+            "retention_days": retention,
+            "protected": t.slug == settings.default_tenant_slug,
+        }
+        for t in rows
+    ]
+
+
+@router.post("/tenants/{tenant_id}/purge", response_model=Message)
+def purge_now(
+    tenant_id: str,
+    request: Request,
+    confirm: str = Query(..., description="The tenant's slug, typed to confirm"),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_platform_admin),
+):
+    """Purge a deleted workspace immediately, without waiting out the window.
+
+    Irreversible, and the only way to honour a "delete my data now" request, so the
+    slug has to be typed rather than a button pressed.
+    """
+    from app.platform import purge as purge_service
+
+    with platform_scope():
+        tenant = db.get(Tenant, tenant_id)
+    if not tenant:
+        raise NotFoundError("Tenant")
+    if tenant.deleted_at is None:
+        raise AppError("Delete the workspace first — purging a live one is data loss", 400)
+    if confirm != tenant.slug:
+        raise AppError(f"Type the workspace slug ({tenant.slug}) to confirm", 400)
+
+    name, slug = tenant.name, tenant.slug
+    summary = purge_service.purge_tenant(db, tenant)
+
+    # Audited after the fact, because the tenant it refers to no longer exists.
+    with platform_scope():
+        service.platform_audit(
+            db, admin.id, "tenant.purge", None,
+            {"name": name, "slug": slug, "rows": sum(summary["rows"].values()),
+             "files": summary["files_removed"]},
+            _client_ip(request),
+        )
+        db.commit()
+    return {"detail": f"{name} and all of its data have been permanently removed"}
 
 
 @router.get("/stats", response_model=PlatformStatsOut)

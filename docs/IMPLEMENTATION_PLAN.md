@@ -306,7 +306,7 @@ most common thing to block a launch. 5.1–5.5 have no external dependency and s
 
 ---
 
-## Phase 7 — Hardening, tests and deployment
+## Phase 7 — Hardening, tests and deployment 🚧 IN PROGRESS
 
 | # | Task | Files | Size |
 |---|---|---|---|
@@ -315,8 +315,15 @@ most common thing to block a launch. 5.1–5.5 have no external dependency and s
 | 7.3 | **Signed download URLs** with expiry for all attachments; MIME sniffing and size caps on upload. | `app/documents/router.py`, `app/services/storage.py` | M |
 | 7.4 | **Performance.** Indexes for expiry, DOB day-month, renewal windows and JSONB custom fields; profile lists and dashboards at 10k+ policies per tenant; fix N+1 loads. | migrations, routers | M |
 | 7.5 | **Test coverage** beyond Phase 0's isolation suite: auth and refresh, RBAC, encryption round-trip and masking, billing maths, renewal transitions, provisioning idempotency, CSV import/export. | `backend/tests/**` | L |
-| 7.6 | **Backup, export and purge.** Per-tenant data export; the 30-day soft-delete purge job; documented restore procedure. | `app/platform/service.py`, `app/automation/tasks.py` | M |
-| 7.7 | **Deployment.** Compose and Nginx updates, `alembic upgrade head` on release, environment and secret management for `PII_MASTER_KEY`, runbook. | `docker-compose.yml`, `nginx/nginx.conf`, `docs/` | M |
+| 7.6 | ✅ **Purge and restore.** 30-day soft-delete purge (rows, files and search index), a console list of what is in the window, purge-now with the slug typed, and a documented backup/restore procedure. *Per-tenant data export still to do.* | `app/platform/purge.py`, `app/automation/tasks.py`, `docs/DEPLOY.md` | M |
+| 7.7 | ✅ **Deployment.** `PII_MASTER_KEY` plumbed through both compose files; compose now *refuses to start* without it, `JWT_SECRET` or `ADMIN_PASSWORD` rather than falling back to a placeholder; `.env.example` ships blanks and generation instructions; runbook in `docs/DEPLOY.md`. | `docker-compose*.yml`, `docker/.env.example`, `docs/DEPLOY.md` | M |
+
+**Done first, and why.** 7.7 and 7.6 were pulled to the front of the phase because they
+were the two things actually blocking a deployment. `PII_MASTER_KEY` was enforced by the
+application, passed by neither compose file and mentioned in no example — a fresh
+`docker compose up` crashed at boot with nothing to explain why. And the delete screen
+promised a 30-day purge that nothing performed, which is a promise made to whoever clicks
+delete *and* to whoever asks what happens to their data.
 
 ---
 

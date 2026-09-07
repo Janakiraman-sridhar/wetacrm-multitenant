@@ -108,3 +108,49 @@ def delete_file(key: str) -> None:
                 os.remove(path)
     except Exception:
         log.exception("Failed to delete stored file %s", key)
+
+
+def delete_prefix(prefix: str) -> int:
+    """Remove every stored object under `prefix`. Returns how many went.
+
+    Used when a tenant is purged: `tenants/<id>/` covers their uploads and every
+    poster generated for them. A purge that empties the database and leaves the
+    files is not a purge, whatever the database says afterwards.
+
+    Deliberately *not* routed through `assert_key_readable`, which scopes a key to
+    the caller's own tenant — purging runs outside any tenant, on a tenant that no
+    longer exists. The prefix is checked directly instead.
+    """
+    if not prefix.startswith("tenants/") or prefix.count("/") < 2:
+        raise ValueError(f"Refusing to delete the prefix {prefix!r}")
+
+    removed = 0
+    client = _get_minio()
+    if client:
+        names = [
+            obj.object_name
+            for obj in client.list_objects(settings.minio_bucket, prefix=prefix, recursive=True)
+        ]
+        for name in names:
+            try:
+                client.remove_object(settings.minio_bucket, name)
+                removed += 1
+            except Exception:
+                log.exception("Failed to delete stored file %s", name)
+        return removed
+
+    root = os.path.join(settings.upload_dir, prefix.replace("/", os.sep))
+    if not os.path.isdir(root):
+        return 0
+    for dirpath, _dirnames, filenames in os.walk(root, topdown=False):
+        for filename in filenames:
+            try:
+                os.remove(os.path.join(dirpath, filename))
+                removed += 1
+            except Exception:
+                log.exception("Failed to delete stored file %s", filename)
+        try:
+            os.rmdir(dirpath)
+        except OSError:
+            pass
+    return removed

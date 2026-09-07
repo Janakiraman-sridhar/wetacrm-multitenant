@@ -9,11 +9,6 @@ import pytest
 API = "/api/v1"
 
 
-@pytest.fixture()
-def admin_headers(platform_admin_token) -> dict[str, str]:
-    return {"Authorization": f"Bearer {platform_admin_token}"}
-
-
 def _make_tenant(client, admin_headers, name, email, template_key):
     resp = client.post(
         f"{API}/platform/tenants",

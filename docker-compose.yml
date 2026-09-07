@@ -52,11 +52,14 @@ services:
     restart: unless-stopped
     environment: &backend_env
       DATABASE_URL: postgresql://${POSTGRES_USER:-weta}:${POSTGRES_PASSWORD:-weta}@postgres:5432/${POSTGRES_DB:-weta_crm}
-      JWT_SECRET: ${JWT_SECRET:-change-me-jwt-secret}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env — see docs/DEPLOY.md}
+      # Wraps every tenant's data key. Losing it makes every stored PAN and
+      # Aadhaar permanently unreadable; leaking it undoes the encryption.
+      PII_MASTER_KEY: ${PII_MASTER_KEY:?set PII_MASTER_KEY in .env — see docs/DEPLOY.md}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
       APP_URL: ${APP_URL:-}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@wetacrm.com}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env — see docs/DEPLOY.md}
       REDIS_URL: redis://redis:6379/0
       MEILI_URL: http://meilisearch:7700
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-change-me-meili-key}

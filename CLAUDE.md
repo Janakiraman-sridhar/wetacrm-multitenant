@@ -47,7 +47,7 @@ cd backend && .venv/Scripts/python.exe -m pytest          # all
 `backend/tests/` holds the tenant-isolation (Phase 0), template/provisioning (Phase 1)
 custom-field (Phase 2), customer-PII (Phase 3), policy (Phase 4), poster/WhatsApp (Phase 5) and
 loans/reports/insurance-quotation (Phase 6) and hardening (Phase 7: auth/RBAC, billing and
-CSV I/O, signed downloads, purge, export, indexes, security review) and email-workflow suites — 492 tests. Install
+CSV I/O, signed downloads, purge, export, indexes, security review) and email-workflow suites — 501 tests. Install
 test deps with `pip install -r requirements-dev.txt`. There is no frontend test suite;
 `npm run build` (which runs `tsc -b`) is the only typecheck gate.
 
@@ -224,9 +224,27 @@ Two rules keep half-rendered output away from customers:
 
 Both were found by looking at a rendered poster, not by a test. Look at the output.
 
-Fonts resolve through a candidate list (Linux paths first for Docker, then Windows);
-a missing font falls back to Pillow's bitmap default and logs loudly. Add
-`fonts-dejavu-core` to the backend image.
+Fonts resolve through a candidate list (Linux paths first for Docker, then Windows).
+`load_font(size, bold, family, italic)` falls back along **two** axes — an unavailable
+italic drops to the upright of the same family, an unavailable family drops to `sans` —
+before reaching Pillow's bitmap default, which looks like a ransom note next to real
+type. `FONT_FAMILIES` is what `/poster/merge-fields` advertises, so the editor can only
+offer a family the renderer can actually resolve. Add `fonts-dejavu-core` to the image.
+
+**Alpha is the trap in this file.** Pillow's `putalpha` *replaces* the alpha channel and
+`ImageDraw.text` *replaces* the pixel rather than blending it, and `render()` ends with
+`convert("RGB")`, which throws alpha away. Both bugs that produced were the same shape: a
+control the editor offered, that changed the spec, and changed nothing on the poster.
+So: `_rounded` composites its mask against the layer's existing alpha, and a text layer
+with `opacity < 1` is drawn onto its own transparent sheet and `alpha_composite`d.
+`tests/test_poster_whatsapp.py` asserts these **in pixels** — a byte-length comparison
+passes happily while the control does nothing.
+
+The editor drags: `components/PosterCanvas.tsx` overlays one invisible box per layer on
+the server-rendered image for click-to-select, drag-to-move and resize. It draws no
+design of its own — a second, client-side copy is exactly the drift the server-rendered
+preview exists to prevent. A **text** layer gets no height handle: the renderer derives
+its height from the wrapped lines and never reads `h`.
 
 ### WhatsApp — two channels, one interface
 

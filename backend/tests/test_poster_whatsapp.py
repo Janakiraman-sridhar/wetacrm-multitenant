@@ -417,3 +417,128 @@ def test_the_whole_call_to_action_disappears_without_a_number():
     with_number = render(spec, {"agent_mobile": "+919876543210"})
     without = render(spec, {"agent_mobile": ""})
     assert len(without) < len(with_number), "the empty button was still drawn"
+
+
+# --- design controls, checked in pixels ---------------------------------------
+#
+# These read the rendered image rather than comparing byte lengths, because the
+# bugs this section exists to catch were all of one kind: a control that changed
+# the spec, changed nothing on the poster, and reported success. An agent then
+# drags a slider, sees no difference, and concludes the studio is broken.
+
+def _pixels(spec, values=None):
+    from io import BytesIO
+
+    from PIL import Image
+
+    return Image.open(BytesIO(render(spec, values or {}))).convert("RGB")
+
+
+def _on_black(layer):
+    return {"size": "square", "background": {"color": "#000000"}, "layers": [layer]}
+
+
+def _colours(image):
+    """Every pixel as an (r, g, b) tuple. `getdata()` is on its way out of Pillow."""
+    raw = image.tobytes()
+    return [tuple(raw[i:i + 3]) for i in range(0, len(raw), 3)]
+
+
+def test_text_opacity_blends_instead_of_being_thrown_away():
+    """Half-opacity white text over black must land mid-grey.
+
+    `draw.text` on an RGBA canvas *replaces* the pixel instead of blending it, and
+    the final `convert("RGB")` then discards the alpha — so text drawn straight onto
+    the canvas came out fully opaque however low the opacity was set.
+    """
+    layer = {"type": "text", "x": 0, "y": 100, "w": 1080, "text": "OPACITY",
+             "size": 200, "color": "#FFFFFF", "align": "center", "bold": True}
+    solid = _pixels(_on_black(layer))
+    faded = _pixels(_on_black({**layer, "opacity": 0.5}))
+
+    brightest_solid = max(_colours(solid), key=sum)
+    brightest_faded = max(_colours(faded), key=sum)
+    assert brightest_solid == (255, 255, 255)
+    assert 100 < brightest_faded[0] < 180, brightest_faded
+
+
+def test_a_rounded_shape_keeps_the_opacity_it_was_given():
+    """Rounding the corners must not make a translucent panel solid.
+
+    `_rounded` applied its mask with `putalpha`, which *replaces* the alpha channel
+    — so any shape with both a radius and an opacity rendered fully opaque, and the
+    frosted panel every one of these designs uses came out as a white slab.
+    """
+    panel = {"type": "rect", "x": 100, "y": 100, "w": 880, "h": 400,
+             "fill": "#FFFFFF", "opacity": 0.2}
+    square = _pixels(_on_black(panel)).getpixel((540, 300))
+    rounded = _pixels(_on_black({**panel, "radius": 40})).getpixel((540, 300))
+
+    assert square == rounded, "the corner radius changed the fill's opacity"
+    assert square[0] < 90, f"20% white over black should stay dark, got {square}"
+
+
+def test_a_gradient_background_changes_down_the_canvas():
+    spec = {"size": "square", "layers": [],
+            "background": {"color": "#000000", "gradient": {"to": "#FFFFFF"}}}
+    image = _pixels(spec)
+    assert image.getpixel((540, 5))[0] < 20
+    assert image.getpixel((540, 1075))[0] > 235
+    # Horizontal runs the other way; the top row is then a full sweep, not flat.
+    across = _pixels({**spec, "background": {**spec["background"],
+                                             "gradient": {"to": "#FFFFFF", "angle": "horizontal"}}})
+    assert across.getpixel((5, 540))[0] < 20
+    assert across.getpixel((1075, 540))[0] > 235
+
+
+def test_a_line_layer_draws_where_it_is_told():
+    spec = _on_black({"type": "line", "x": 200, "y": 500, "w": 600, "h": 10,
+                      "fill": "#FF0000"})
+    image = _pixels(spec)
+    assert image.getpixel((500, 505)) == (255, 0, 0)
+    assert image.getpixel((100, 505)) == (0, 0, 0), "the line leaked left of its x"
+    assert image.getpixel((500, 400)) == (0, 0, 0), "the line leaked above its y"
+
+
+def test_letter_spacing_widens_the_line():
+    from app.poster.render import _line_width, load_font
+    from PIL import Image, ImageDraw
+
+    draw = ImageDraw.Draw(Image.new("RGB", (10, 10)))
+    font = load_font(40)
+    assert _line_width(draw, "SPACED", font, 12) > _line_width(draw, "SPACED", font, 0)
+
+
+def test_an_unknown_font_family_falls_back_rather_than_failing():
+    """A family that resolves to nothing must not drop to Pillow's bitmap default."""
+    from app.poster.render import load_font
+
+    assert load_font(40, family="not-a-real-family").getname() == load_font(40).getname()
+    # Italic is unavailable in some containers; the upright of the family is the
+    # right answer there, not a different family.
+    assert load_font(40, italic=True) is not None
+
+
+def test_uppercase_is_applied_to_the_rendered_text_not_just_stored():
+    lower = _on_black({"type": "text", "x": 0, "y": 100, "w": 1080, "text": "quiet",
+                       "size": 160, "color": "#FFFFFF"})
+    upper = {**lower, "layers": [{**lower["layers"][0], "uppercase": True}]}
+    assert _pixels(lower).tobytes() != _pixels(upper).tobytes()
+
+
+def test_an_outline_puts_its_own_colour_around_the_glyphs():
+    spec = _on_black({"type": "text", "x": 0, "y": 100, "w": 1080, "text": "RING",
+                      "size": 200, "color": "#FFFFFF", "align": "center", "bold": True,
+                      "outline": {"color": "#FF0000", "width": 6}})
+    colours = set(_colours(_pixels(spec)))
+    assert any(r > 180 and g < 80 and b < 80 for r, g, b in colours), "no outline drawn"
+
+
+def test_a_nonsense_opacity_is_treated_as_opaque_rather_than_crashing():
+    from app.poster.render import _opacity_factor
+
+    assert _opacity_factor(None) == 1.0
+    assert _opacity_factor("nonsense") == 1.0
+    assert _opacity_factor(5) == 1.0
+    assert _opacity_factor(-2) == 0.0
+    assert _opacity_factor(0.25) == 0.25

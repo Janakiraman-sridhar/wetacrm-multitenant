@@ -112,6 +112,9 @@ def merge_fields(db: Session = Depends(get_db), user: User = Depends(get_current
         "sample": service.sample_values(db, user),
         "sizes": {name: {"width": w, "height": h} for name, (w, h) in POSTER_SIZES.items()},
         "categories": POSTER_CATEGORIES,
+        # The editor offers exactly the families the renderer can resolve. A list
+        # hardcoded in the frontend would offer a font that silently falls back.
+        "fonts": poster_render.FONT_FAMILIES,
     }
 
 

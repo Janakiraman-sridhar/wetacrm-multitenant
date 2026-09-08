@@ -92,10 +92,28 @@ def parse_template(raw: dict) -> TemplateConfig:
         if not stage.get("name"):
             raise TemplateError("Every pipeline stage needs a name")
 
+    seen_triggers = set()
     for template in raw.get("email_templates", []):
         for required in ("name", "subject", "body_html"):
             if required not in template:
                 raise TemplateError(f"Email template is missing '{required}'")
+
+        trigger = template.get("trigger")
+        if trigger:
+            from app.settings.workflows import TRIGGERS_BY_KEY
+
+            if trigger not in TRIGGERS_BY_KEY:
+                raise TemplateError(
+                    f"Email template '{template['name']}' names an unknown trigger "
+                    f"'{trigger}'"
+                )
+            if trigger in seen_triggers:
+                # Two templates on one trigger means the email a customer receives
+                # depends on which row a query reaches first.
+                raise TemplateError(
+                    f"Two email templates both claim the trigger '{trigger}'"
+                )
+            seen_triggers.add(trigger)
 
     return TemplateConfig(
         key=raw["key"],

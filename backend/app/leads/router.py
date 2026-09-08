@@ -18,7 +18,7 @@ from app.leads.models import LEAD_STATUSES, Lead, LeadSource
 from app.leads.schemas import LeadConvertIn, LeadCreate, LeadOut, LeadUpdate, SourceOut
 from app.notifications.service import notify
 from app.services import search_sync
-from app.services.email import send_templated
+from app.settings import workflows
 from app.users.models import User
 
 router = APIRouter(prefix="/leads", tags=["leads"])
@@ -63,7 +63,7 @@ def _notify_assignment(db: Session, lead: Lead, actor: User) -> None:
                f"Assigned by {actor.full_name}", f"/leads?id={lead.id}")
         assignee = db.get(User, lead.assigned_to_id)
         if assignee:
-            send_templated(db, assignee.email, "lead_assigned",
+            workflows.fire(db, "lead_assigned", assignee.email,
                            {"first_name": assignee.first_name, "lead_title": lead.title})
 
 

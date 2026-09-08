@@ -12,6 +12,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { API_URL, api, errorMessage, tokenStore } from "@/lib/api";
 import { formatDate } from "@/lib/format";
+import { EmailWorkflow } from "@/components/EmailWorkflow";
 import type { AppSetting, DealStage, EmailTemplate, Page, Role, Tag, User } from "@/types";
 
 const TABS = ["Company", "Users", "Roles", "Fields", "Pipeline", "Tags", "Documents", "Email Templates", "System"] as const;
@@ -1325,8 +1326,15 @@ function TemplatesTab({ canWrite }: { canWrite: boolean }) {
       {(templates.data ?? []).map((t) => (
         <div key={t.id} className="card p-4">
           <div className="flex items-start justify-between">
-            <div>
-              <p className="font-semibold capitalize">{t.name.replace(/_/g, " ")}</p>
+            <div className="min-w-0">
+              <p className="flex items-center gap-2 font-semibold capitalize">
+                {t.name.replace(/_/g, " ")}
+                {t.trigger && !t.enabled && !t.locked && (
+                  <span className="badge bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                    off
+                  </span>
+                )}
+              </p>
               <p className="text-xs text-slate-400">{t.description}</p>
             </div>
             {canWrite && (
@@ -1347,6 +1355,7 @@ function TemplatesTab({ canWrite }: { canWrite: boolean }) {
           <p className="mt-1.5 text-[11px] text-slate-400">
             {(t.variables ?? []).length} merge field{(t.variables ?? []).length === 1 ? "" : "s"} available
           </p>
+          <EmailWorkflow template={t} canWrite={canWrite} />
         </div>
       ))}
 

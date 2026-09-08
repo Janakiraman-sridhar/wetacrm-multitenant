@@ -29,11 +29,49 @@ class EmailTemplateOut(ORMModel):
     updated_at: datetime
     variables: list[TemplateVariable] = []
 
+    #: What fires it, and whether it does. See `app/settings/workflows.py`.
+    trigger: str | None = None
+    enabled: bool = True
+    config: dict = {}
+    #: Denormalised from the trigger catalog so the settings screen can describe the
+    #: workflow without a second request.
+    trigger_label: str | None = None
+    trigger_description: str | None = None
+    trigger_kind: str | None = None
+    audience: str | None = None
+    locked: bool = False
+    locked_reason: str = ""
+    customer_facing: bool = False
+    config_schema: dict = {}
+    #: Sends recorded for this trigger, so the screen can say it is actually working.
+    sent_count: int = 0
+    last_sent_at: datetime | None = None
+
 
 class EmailTemplateUpdate(ORMModel):
     subject: str | None = None
     body_html: str | None = None
     description: str | None = None
+    trigger: str | None = None
+    enabled: bool | None = None
+    config: dict | None = None
+
+
+class WorkflowTriggerOut(ORMModel):
+    key: str
+    label: str
+    description: str
+    kind: str
+    audience: str
+    merge_fields: list[str] = []
+    locked: bool = False
+    locked_reason: str = ""
+    customer_facing: bool = False
+    config_schema: dict = {}
+    #: The template currently bound to it, if any.
+    template_id: str | None = None
+    template_name: str | None = None
+    enabled: bool = False
 
 
 class TagOut(ORMModel):

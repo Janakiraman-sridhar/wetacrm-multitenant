@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Response, UploadFile
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.activities.service import audit
@@ -11,9 +11,11 @@ from app.core.schemas import Message
 from app.database.session import get_db
 from app.services import storage
 from app.services.pdf import document_pdf, sample_document
-from app.settings.models import EmailTemplate, Setting, Tag
+from app.settings import workflows
+from app.settings.models import EmailTemplate, SentEmail, Setting, Tag
 from app.settings.schemas import (
-    EmailTemplateOut, EmailTemplateUpdate, SettingOut, SettingUpdate, TagCreate, TagOut, TagUpdate,
+    EmailTemplateOut, EmailTemplateUpdate, SettingOut, SettingUpdate, TagCreate, TagOut,
+    TagUpdate, WorkflowTriggerOut,
 )
 from app.users.models import User
 
@@ -168,7 +170,31 @@ TEMPLATE_VARIABLES: dict[str, list[dict]] = {
 }
 
 
-def _template_out(tpl: EmailTemplate) -> dict:
+def _template_out(tpl: EmailTemplate, db: Session | None = None) -> dict:
+    definition = workflows.trigger_or_none(tpl.trigger)
+
+    # Merge fields come from the trigger when it has them: the trigger is what
+    # decides which values exist at the moment the email is built, so a template
+    # bound to one should offer that trigger's fields rather than a list keyed on
+    # the template's name.
+    if definition:
+        variables = [
+            {"key": f, "label": f.replace("_", " ").capitalize(), "sample": ""}
+            for f in definition.merge_fields
+        ]
+    else:
+        variables = TEMPLATE_VARIABLES.get(tpl.name, [])
+
+    sent_count, last_sent_at = 0, None
+    if db is not None and tpl.trigger:
+        sent_count = db.scalar(
+            select(func.count()).select_from(SentEmail).where(SentEmail.trigger == tpl.trigger)
+        ) or 0
+        last_sent_at = db.scalar(
+            select(SentEmail.sent_at).where(SentEmail.trigger == tpl.trigger)
+            .order_by(SentEmail.sent_at.desc()).limit(1)
+        )
+
     return {
         "id": tpl.id,
         "name": tpl.name,
@@ -176,23 +202,99 @@ def _template_out(tpl: EmailTemplate) -> dict:
         "body_html": tpl.body_html,
         "description": tpl.description,
         "updated_at": tpl.updated_at,
-        "variables": TEMPLATE_VARIABLES.get(tpl.name, []) + COMMON_TEMPLATE_VARIABLES,
+        "variables": variables + COMMON_TEMPLATE_VARIABLES,
+        "trigger": tpl.trigger,
+        "enabled": tpl.enabled,
+        "config": tpl.config or {},
+        "trigger_label": definition.label if definition else None,
+        "trigger_description": definition.description if definition else None,
+        "trigger_kind": definition.kind if definition else None,
+        "audience": definition.audience if definition else None,
+        "locked": definition.locked if definition else False,
+        "locked_reason": definition.locked_reason if definition else "",
+        "customer_facing": bool(definition and definition.key in workflows.CUSTOMER_FACING),
+        "config_schema": definition.config_schema if definition else {},
+        "sent_count": sent_count,
+        "last_sent_at": last_sent_at,
     }
 
 
 @router.get("/email-templates", response_model=list[EmailTemplateOut], dependencies=[Depends(require_perm("settings:read"))])
 def list_email_templates(db: Session = Depends(get_db)):
-    return [_template_out(t) for t in db.scalars(select(EmailTemplate).order_by(EmailTemplate.name)).all()]
+    return [
+        _template_out(t, db)
+        for t in db.scalars(select(EmailTemplate).order_by(EmailTemplate.name)).all()
+    ]
+
+
+@router.get("/email-workflows", response_model=list[WorkflowTriggerOut],
+            dependencies=[Depends(require_perm("settings:read"))])
+def list_email_workflows(db: Session = Depends(get_db)):
+    """Every moment an email can fire, and what is bound to it.
+
+    Listed from the catalog rather than from the templates, so a trigger with no
+    template is visible as a gap instead of being invisible — which is exactly how
+    the renewal and birthday emails sat unsent.
+    """
+    bound = {t.trigger: t for t in db.scalars(select(EmailTemplate)).all() if t.trigger}
+    return [
+        {
+            "key": d.key,
+            "label": d.label,
+            "description": d.description,
+            "kind": d.kind,
+            "audience": d.audience,
+            "merge_fields": d.merge_fields,
+            "locked": d.locked,
+            "locked_reason": d.locked_reason,
+            "customer_facing": d.key in workflows.CUSTOMER_FACING,
+            "config_schema": d.config_schema,
+            "template_id": bound[d.key].id if d.key in bound else None,
+            "template_name": bound[d.key].name if d.key in bound else None,
+            "enabled": bool(d.key in bound and bound[d.key].enabled),
+        }
+        for d in workflows.TRIGGERS
+    ]
 
 
 @router.patch("/email-templates/{template_id}", response_model=EmailTemplateOut)
 def update_email_template(template_id: str, payload: EmailTemplateUpdate, db: Session = Depends(get_db), user: User = Depends(require_perm("settings:write"))):
     tpl = get_or_404(db, EmailTemplate, template_id, "Email template")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+
+    if "trigger" in data and data["trigger"]:
+        if data["trigger"] not in workflows.TRIGGERS_BY_KEY:
+            raise AppError(f"Unknown trigger '{data['trigger']}'", 400)
+        clash = db.scalar(
+            select(EmailTemplate).where(
+                EmailTemplate.trigger == data["trigger"], EmailTemplate.id != tpl.id
+            )
+        )
+        if clash:
+            # Two templates on one trigger means the email a customer receives
+            # depends on which row the query reached first.
+            raise AppError(
+                f"'{clash.name}' is already the template for that trigger. "
+                "Move it off first, or edit that one instead.",
+                409,
+            )
+
+    definition = workflows.trigger_or_none(data.get("trigger", tpl.trigger))
+    if definition and definition.locked and data.get("enabled") is False:
+        raise AppError(definition.locked_reason, 400)
+
+    if "config" in data:
+        data["config"] = workflows.coerce_config(
+            data.get("trigger", tpl.trigger) or "", data["config"]
+        )
+
+    for field, value in data.items():
         setattr(tpl, field, value)
-    audit(db, user.id, "update", "email_template", tpl.id, {"name": tpl.name})
+
+    audit(db, user.id, "update", "email_template", tpl.id,
+          {"name": tpl.name, "trigger": tpl.trigger, "enabled": tpl.enabled})
     db.commit()
-    return _template_out(tpl)
+    return _template_out(tpl, db)
 
 
 # --- Tags ---

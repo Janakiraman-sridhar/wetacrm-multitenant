@@ -47,7 +47,7 @@ cd backend && .venv/Scripts/python.exe -m pytest          # all
 `backend/tests/` holds the tenant-isolation (Phase 0), template/provisioning (Phase 1)
 custom-field (Phase 2), customer-PII (Phase 3), policy (Phase 4), poster/WhatsApp (Phase 5) and
 loans/reports/insurance-quotation (Phase 6) and hardening (Phase 7: auth/RBAC, billing and
-CSV I/O, signed downloads, purge, export, indexes, security review) suites — 470 tests. Install
+CSV I/O, signed downloads, purge, export, indexes, security review) and email-workflow suites — 492 tests. Install
 test deps with `pip install -r requirements-dev.txt`. There is no frontend test suite;
 `npm run build` (which runs `tsc -b`) is the only typecheck gate.
 
@@ -337,6 +337,37 @@ row, so "whose birthday is this week" stays a range scan.
 `tenant_modules` rows joined with the catalog's route/icon/permission. Two filters apply:
 the tenant decides which modules exist, the user's role decides which they can see.
 Never add a module to a hardcoded list in the frontend — add it to the catalog.
+
+### Emails fire because a trigger says so
+
+`EmailTemplate.trigger` names the moment a template sends, and
+`app/settings/workflows.py` is the catalog of those moments. Before this the link
+was a string literal at a call site, which had two consequences that were both live:
+`notification_settings` was stored and never read (so switching an email off did
+nothing), and the insurance template's renewal and birthday emails were editable,
+configured, and sent by nothing at all.
+
+- Call sites use `workflows.fire(db, "lead_assigned", to, ctx)`, never
+  `send_templated` directly. `fire` returns False when the trigger is switched off —
+  a normal outcome, not an error.
+- One template per trigger, enforced on write: two would mean the email a customer
+  receives depends on which row a query reached first.
+- `locked` triggers cannot be switched off, with the reason in the refusal — turning
+  off password reset locks people out with no way back in.
+- **Customer-facing triggers default to off.** Provisioning a workspace must never
+  start emailing that client's customers.
+
+Scheduled triggers (renewal, birthday) run from daily Celery jobs through
+`app/settings/dispatch.py`, and every send writes a `sent_emails` row **before** the
+send, with a unique `(tenant_id, dedupe_key)`. Without it a daily job over a
+two-month renewal window emails every customer every morning for two months. Writing
+the row first means a crash mid-send fails towards *not* sending again, which is the
+right way round: a missed reminder is recoverable, a customer harassed by software is
+not. The table doubles as the answer to "did we email this customer?".
+
+Adding a trigger is a `TriggerDef` plus the `fire()` call at the moment it names —
+the alternative is a chain of `if setting_enabled(...)` at scattered call sites,
+which is where both original bugs came from.
 
 ### Serving files: signed links, and not trusting the uploader
 

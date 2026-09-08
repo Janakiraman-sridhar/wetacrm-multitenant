@@ -20,7 +20,7 @@ from app.core.tenancy import platform_scope, tenant_scope
 from app.database.base import utcnow
 from app.database.session import get_db
 from app.platform.models import Tenant
-from app.services.email import send_templated
+from app.settings import workflows
 from app.users.models import User
 from app.users.schemas import UserOut
 
@@ -124,7 +124,7 @@ def forgot_password(payload: ForgotPasswordIn, db: Session = Depends(get_db)):
         origin = settings.public_app_url
         # The email template and branding live in the user's own tenant.
         with tenant_scope(user.tenant_id):
-            send_templated(db, user.email, "password_reset",
+            workflows.fire(db, "password_reset", user.email,
                            {"first_name": user.first_name, "reset_link": f"{origin}/reset-password?token={token}"})
     # Same response either way — do not leak which emails exist.
     return {"detail": "If that email exists, a reset link has been sent"}

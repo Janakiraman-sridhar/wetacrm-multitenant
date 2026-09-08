@@ -74,13 +74,13 @@ def _queue_lead_assignment(db, opts, lead, actor) -> None:
 
     def effect():
         from app.notifications.service import notify
-        from app.services.email import send_templated
+        from app.settings import workflows
 
         notify(db, lead.assigned_to_id, "lead_assigned", f"Lead assigned: {lead.title}",
                f"Assigned by {actor.full_name}", f"/leads?id={lead.id}")
         assignee = db.get(User, lead.assigned_to_id)
         if assignee:
-            send_templated(db, assignee.email, "lead_assigned",
+            workflows.fire(db, "lead_assigned", assignee.email,
                            {"first_name": assignee.first_name, "lead_title": lead.title})
 
     opts.pending.append(effect)

@@ -24,7 +24,8 @@ from app.quotations.schemas import (
     ConvertToPolicyIn, QuotationCreate, QuotationOut, QuotationUpdate, SendQuotationIn,
 )
 from app.services import billing, storage
-from app.services.email import email_configured, send_templated
+from app.services.email import email_configured
+from app.settings import workflows
 from app.services.numbering import next_number
 from app.services.pdf import document_pdf
 from app.settings.models import Setting
@@ -177,7 +178,7 @@ def send_quotation(quotation_id: str, payload: SendQuotationIn, db: Session = De
     profile = _company_profile(db)
     pdf = document_pdf("quotation", quotation, profile, _setting(db, "quotation_template"), _logo_bytes(db))
     contact_name = f"{quotation.contact.first_name}" if quotation.contact else "Customer"
-    sent = send_templated(db, to, "quotation",
+    sent = workflows.fire(db, "quotation", to,
                           {"contact_name": contact_name, "number": quotation.number,
                            "total": f"{quotation.currency} {quotation.total}", "company_name": profile.get("name", "WeTa CRM")},
                           attachments=[(f"{quotation.number}.pdf", pdf, "application/pdf")])

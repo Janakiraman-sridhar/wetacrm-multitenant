@@ -1,7 +1,7 @@
 {
   "key": "insurance_agent",
   "name": "Insurance Agent",
-  "version": 4,
+  "version": 6,
   "description": "For an insurance agent or agency: customers instead of contacts, an enquiry-to-policy pipeline, insurer and bank masters, and renewal-focused reporting. Policies, Poster Studio and Loans arrive in later phases.",
   "modules": [
     {
@@ -511,37 +511,49 @@
       "name": "welcome",
       "subject": "Welcome to {app_name}",
       "body_html": "<div style=\"font-family:Arial,Helvetica,sans-serif;color:#0f172a;line-height:1.6\">{logo_html}<p>Hi {first_name},</p><p>Your <b>{app_name}</b> account is ready. Sign in with <b>{email}</b>.</p><p style=\"margin:22px 0\"><a href=\"{app_url}\" style=\"display:inline-block;background:#4F46E5;color:#ffffff;text-decoration:none;padding:11px 22px;border-radius:8px;font-weight:600\">Open {app_name}</a></p><p style=\"color:#64748b;font-size:13px\">Or paste this link into your browser: <a href=\"{app_url}\" style=\"color:#4F46E5\">{app_url}</a></p></div>",
-      "description": "Sent when a new user account is created"
+      "description": "Sent when a new user account is created",
+      "trigger": "welcome",
+      "enabled": true
     },
     {
       "name": "password_reset",
       "subject": "Reset your {app_name} password",
       "body_html": "<p>Hi {first_name},</p><p>Use this link to reset your password: <a href='{reset_link}'>Reset password</a>. It expires in 30 minutes.</p>",
-      "description": "Password reset link"
+      "description": "Password reset link",
+      "trigger": "password_reset",
+      "enabled": true
     },
     {
       "name": "lead_assigned",
       "subject": "New enquiry assigned: {lead_title}",
       "body_html": "<p>Hi {first_name},</p><p>The lead <b>{lead_title}</b> has been assigned to you.</p>",
-      "description": "Sent when an enquiry is assigned to an agent"
+      "description": "Sent when an enquiry is assigned to an agent",
+      "trigger": "lead_assigned",
+      "enabled": true
     },
     {
       "name": "quotation",
       "subject": "Quotation {number} from {company_name}",
       "body_html": "<p>Dear {contact_name},</p><p>Please find attached quotation <b>{number}</b> totalling <b>{total}</b>.</p>",
-      "description": "Sent with a quotation PDF"
+      "description": "Sent with a quotation PDF",
+      "trigger": "quotation",
+      "enabled": true
     },
     {
       "name": "renewal_reminder",
       "subject": "Your policy {policy_number} is due for renewal",
       "body_html": "<p>Dear {customer_name},</p><p>Your policy <b>{policy_number}</b> with {insurer} expires on <b>{expiry_date}</b>. Reply to this email or call {agent_mobile} and we will take care of the renewal.</p>",
-      "description": "Sent ahead of a policy expiry date"
+      "description": "Sent ahead of a policy expiry date",
+      "trigger": "policy_renewal_due",
+      "enabled": false
     },
     {
       "name": "birthday_wish",
       "subject": "Happy birthday, {customer_name}!",
       "body_html": "<p>Dear {customer_name},</p><p>Wishing you a very happy birthday and a wonderful year ahead.</p><p>&mdash; {agent_name}, {agency_name}</p>",
-      "description": "Birthday greeting"
+      "description": "Birthday greeting",
+      "trigger": "customer_birthday",
+      "enabled": false
     }
   ],
   "masters": {

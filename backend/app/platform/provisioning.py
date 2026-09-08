@@ -228,12 +228,21 @@ def _apply_email_templates(db: Session, config: TemplateConfig) -> None:
     for template in config.email_templates:
         if template["name"] in existing:
             continue
+        # The trigger has to come across too. Without it a newly provisioned tenant
+        # gets templates that look configured and that nothing ever sends — which is
+        # precisely the bug the trigger field was added to fix.
+        from app.settings.workflows import coerce_config
+
+        trigger = template.get("trigger")
         db.add(
             EmailTemplate(
                 name=template["name"],
                 subject=template["subject"],
                 body_html=template["body_html"],
                 description=template.get("description"),
+                trigger=trigger,
+                enabled=bool(template.get("enabled", True)),
+                config=coerce_config(trigger or "", template.get("config")),
             )
         )
 

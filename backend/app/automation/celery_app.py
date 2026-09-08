@@ -55,6 +55,18 @@ celery_app.conf.beat_schedule = {
         "task": "app.automation.tasks.reindex_search",
         "schedule": crontab(hour=2, minute=0),
     },
+    # After the status refresh, so "expiring" is already correct when these read it.
+    # Mid-morning rather than at 1am: an email that lands at 3am is read at 9 with
+    # everything else, and a renewal reminder timestamped 03:12 looks automated in a
+    # way that a person's reminder does not.
+    "renewal-reminder-emails-daily": {
+        "task": "app.automation.tasks.send_renewal_emails",
+        "schedule": crontab(hour=9, minute=15),
+    },
+    "birthday-emails-daily": {
+        "task": "app.automation.tasks.send_birthday_emails",
+        "schedule": crontab(hour=9, minute=0),
+    },
     # Weekly, not nightly: this one is irreversible, and a job that destroys data
     # should run rarely enough that a bad deploy is noticed before it runs twice.
     "purge-deleted-tenants-weekly": {

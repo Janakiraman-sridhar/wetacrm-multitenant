@@ -379,6 +379,46 @@ export interface EmailTemplate {
   description?: string | null;
   updated_at: string;
   variables?: TemplateVariable[];
+
+  /** What fires it. null means the template exists and nothing sends it. */
+  trigger?: string | null;
+  enabled: boolean;
+  config: Record<string, any>;
+  trigger_label?: string | null;
+  trigger_description?: string | null;
+  /** "event" fires inside a request; "scheduled" fires from a daily job. */
+  trigger_kind?: "event" | "scheduled" | null;
+  audience?: string | null;
+  locked: boolean;
+  locked_reason: string;
+  customer_facing: boolean;
+  config_schema: Record<string, EmailConfigField>;
+  sent_count: number;
+  last_sent_at?: string | null;
+}
+
+export interface EmailConfigField {
+  label: string;
+  type: "multiselect";
+  options: number[];
+  default?: number[];
+  help?: string;
+}
+
+export interface EmailWorkflowTrigger {
+  key: string;
+  label: string;
+  description: string;
+  kind: "event" | "scheduled";
+  audience: string;
+  merge_fields: string[];
+  locked: boolean;
+  locked_reason: string;
+  customer_facing: boolean;
+  config_schema: Record<string, EmailConfigField>;
+  template_id?: string | null;
+  template_name?: string | null;
+  enabled: boolean;
 }
 
 

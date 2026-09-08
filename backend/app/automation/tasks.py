@@ -282,3 +282,22 @@ def purge_deleted_tenants() -> int:
                 log.exception("Could not purge tenant %s; it stays for the next run", tenant.slug)
                 db.rollback()
     return purged
+
+
+@celery_app.task
+def send_renewal_emails() -> int:
+    """Email customers whose policies are approaching expiry.
+
+    Off unless a tenant switches the trigger on — this one writes to their
+    customers, not to their staff.
+    """
+    from app.settings.dispatch import send_renewal_emails as _send
+
+    return for_each_tenant(_send)
+
+
+@celery_app.task
+def send_birthday_emails() -> int:
+    from app.settings.dispatch import send_birthday_emails as _send
+
+    return for_each_tenant(_send)

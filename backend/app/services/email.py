@@ -134,4 +134,6 @@ def send_welcome(db: Session, user) -> bool:
         inline_images = [("app-logo", data, mime)]
     else:
         ctx["logo_html"] = ""
-    return send_templated(db, user.email, "welcome", ctx, inline_images=inline_images)
+    from app.settings import workflows
+
+    return workflows.fire(db, "welcome", user.email, ctx, inline_images=inline_images)

@@ -47,7 +47,7 @@ cd backend && .venv/Scripts/python.exe -m pytest          # all
 `backend/tests/` holds the tenant-isolation (Phase 0), template/provisioning (Phase 1)
 custom-field (Phase 2), customer-PII (Phase 3), policy (Phase 4), poster/WhatsApp (Phase 5) and
 loans/reports/insurance-quotation (Phase 6) and hardening (Phase 7: auth/RBAC, billing and
-CSV I/O, signed downloads, purge, export, indexes, security review) and email-workflow suites — 501 tests. Install
+CSV I/O, signed downloads, purge, export, indexes, security review) and email-workflow suites — 516 tests. Install
 test deps with `pip install -r requirements-dev.txt`. There is no frontend test suite;
 `npm run build` (which runs `tsc -b`) is the only typecheck gate.
 
@@ -245,6 +245,28 @@ the server-rendered image for click-to-select, drag-to-move and resize. It draws
 design of its own — a second, client-side copy is exactly the drift the server-rendered
 preview exists to prevent. A **text** layer gets no height handle: the renderer derives
 its height from the wrapped lines and never reads `h`.
+
+**A design names its pictures; `load_assets` supplies the bytes.** `logo` is the
+workspace logo and anything else in a layer's `source` (or `background.image`) is a
+`poster_assets` id — the same shape the renderer already used, which is why adding
+an image library changed no rendering code. Only the pictures a design actually
+names are read, and one that cannot be read is left out of the map rather than
+raised: the renderer skips an image layer it has no bytes for, so a picture someone
+deleted costs that layer and not the whole poster.
+
+Uploads are **raster images only**, decided from the bytes and then checked a second
+way — Pillow must be able to open the file. The two are not the same check: a file
+that sniffs as a PNG but will not decode would upload cleanly and then silently never
+draw, and the agent would place a picture, see nothing, and have nothing to go on.
+SVG is refused outright for the reason it is refused everywhere else here. An asset
+is served back as the type it passed as, with `nosniff` — an allow-list at upload is
+worth nothing if the file returns as something else.
+
+Designs are created, duplicated and deleted from the studio, so switching away from
+one is now a way to lose work: the editor holds the last-saved JSON and asks before
+discarding. Deleting the last design leaves a workspace with none, which is a normal
+state (it is where a new one starts) — hence the empty state offering a blank canvas
+or `POST /poster/seed-presets` to bring the starters back.
 
 ### WhatsApp — two channels, one interface
 

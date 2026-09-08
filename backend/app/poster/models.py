@@ -38,6 +38,32 @@ class PosterTemplate(TenantScoped, BaseModel):
     order: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class PosterAsset(TenantScoped, BaseModel):
+    """An image this workspace uploaded to put on its posters.
+
+    Kept as a row rather than a bare storage key so an agent picks a picture from a
+    library they recognise instead of pasting a path, and so a picture still in use
+    can be found again. The layer spec refers to an asset by **id** in its `source`,
+    which is why nothing about the renderer had to change to support it.
+
+    Only raster images get in, and the type is decided by the bytes: `image/svg+xml`
+    is a document that can run script, so it is refused rather than stored and later
+    served back to the workspace.
+    """
+
+    __tablename__ = "poster_assets"
+
+    name: Mapped[str] = mapped_column(String(200), index=True)
+    file_key: Mapped[str] = mapped_column(String(500))
+    mime_type: Mapped[str] = mapped_column(String(100), default="image/png")
+    width: Mapped[int] = mapped_column(Integer, default=0)
+    height: Mapped[int] = mapped_column(Integer, default=0)
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    uploaded_by_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+
+    uploaded_by = relationship("User", lazy="joined")
+
+
 class PosterBatch(TenantScoped, BaseModel):
     """One run of personalised posters — who they were for, and what came out.
 

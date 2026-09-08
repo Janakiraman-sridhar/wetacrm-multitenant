@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, Copy, Download, Image as ImageIcon, Minus,
-  Plus, Send, Square, Trash2, Type, Users,
+  AlertTriangle, ArrowDown, ArrowUp, Copy, Download, FilePlus2, Image as ImageIcon,
+  Minus, Plus, Send, Square, Trash2, Type, Users,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { Modal } from "@/components/Modal";
+import { ConfirmDialog, Modal } from "@/components/Modal";
+import { AssetPicker, AssetThumb, usePosterAssets } from "@/components/PosterAssets";
 import { PosterCanvas } from "@/components/PosterCanvas";
 import { Select } from "@/components/Select";
 import { useToast } from "@/context/ToastContext";
@@ -44,8 +45,10 @@ interface Layer {
 
 interface Background {
   color?: string;
+  /** A scrim over the photo. White text on an unknown photo is unreadable without one. */
   overlay?: string;
-  image?: string;
+  /** "logo", or the id of an uploaded image. */
+  image?: string | null;
   gradient?: { to?: string; angle?: "vertical" | "horizontal" } | null;
 }
 
@@ -229,6 +232,16 @@ export default function PosterStudio() {
   const [audience, setAudience] = useState<"birthdays" | "renewals">("birthdays");
   const [withinDays, setWithinDays] = useState(7);
   const [batchResult, setBatchResult] = useState<BatchItem[] | null>(null);
+  /** Which slot the image picker is filling — a layer, or the background. */
+  const [picking, setPicking] = useState<{ layer: number } | "background" | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  /** Held while the agent decides whether to throw their unsaved edits away. */
+  const [pending, setPending] = useState<(() => void) | null>(null);
+  //: The design as last saved, so "you have unsaved changes" is a fact rather than
+  //: a guess. Without it, switching designs threw away an afternoon's work in
+  //: silence — which matters far more now that there are several designs to switch
+  //: between.
+  const saved = useRef<string>("");
 
   const { data: templates } = useQuery({
     queryKey: ["poster-templates"],
@@ -243,12 +256,26 @@ export default function PosterStudio() {
     queryFn: async () => (await api.get("/whatsapp/status")).data,
   });
 
+  const { data: assets } = usePosterAssets();
+
+  const load = useCallback((template: PosterTemplate) => {
+    setSelectedId(template.id);
+    setDraft(structuredClone(template));
+    saved.current = JSON.stringify(template);
+    setActiveLayer(null);
+  }, []);
+
   useEffect(() => {
-    if (!draft && templates?.length) {
-      setSelectedId(templates[0].id);
-      setDraft(structuredClone(templates[0]));
-    }
-  }, [templates, draft]);
+    if (!draft && templates?.length) load(templates[0]);
+  }, [templates, draft, load]);
+
+  const dirty = !!draft && JSON.stringify(draft) !== saved.current;
+
+  /** Anything that would throw the current draft away asks first. */
+  const leaveDraft = (then: () => void) => {
+    if (dirty) setPending(() => then);
+    else then();
+  };
 
   const spec = useMemo(
     () => (draft ? { size: draft.size, layers: draft.layers, background: draft.background } : null),
@@ -266,9 +293,50 @@ export default function PosterStudio() {
       ).data,
     onSuccess: () => {
       toast("Design saved");
+      saved.current = JSON.stringify(draft); // the draft *is* the saved state now
       queryClient.invalidateQueries({ queryKey: ["poster-templates"] });
     },
     onError: (err) => toast(errorMessage(err), "error"),
+  });
+
+  const create = useMutation({
+    mutationFn: async (template: Omit<PosterTemplate, "id">) =>
+      (await api.post<PosterTemplate>("/poster/templates", template)).data,
+    onSuccess: async (created) => {
+      await queryClient.invalidateQueries({ queryKey: ["poster-templates"] });
+      load(created);
+      toast(`${created.name} created`);
+    },
+    onError: (err) => toast(errorMessage(err), "error"),
+  });
+
+  const destroy = useMutation({
+    mutationFn: async (id: string) => (await api.delete(`/poster/templates/${id}`)).data,
+    onSuccess: async () => {
+      setConfirmDelete(false);
+      const remaining = (templates ?? []).filter((t) => t.id !== selectedId);
+      await queryClient.invalidateQueries({ queryKey: ["poster-templates"] });
+      setDraft(null); // the load effect picks the next design up
+      saved.current = "";
+      toast(remaining.length ? "Design deleted" : "Design deleted — none left");
+    },
+    onError: (err) => toast(errorMessage(err), "error"),
+  });
+
+  const blank = (): Omit<PosterTemplate, "id"> => ({
+    name: "Untitled design",
+    category: "general",
+    size: draft?.size ?? "square",
+    background: { color: "#FFFFFF" },
+    layers: [{ ...NEW_LAYERS.text, y: 480, text: "Your message here" }],
+  });
+
+  const duplicate = (): Omit<PosterTemplate, "id"> => ({
+    name: `${draft!.name} copy`,
+    category: draft!.category,
+    size: draft!.size,
+    background: structuredClone(draft!.background),
+    layers: structuredClone(draft!.layers),
   });
 
   const generate = useMutation({
@@ -329,9 +397,48 @@ export default function PosterStudio() {
     setActiveLayer(index + 1);
   };
 
+  const restore = () =>
+    api.post("/poster/seed-presets").then(() => {
+      queryClient.invalidateQueries({ queryKey: ["poster-templates"] });
+      toast("Starter designs restored");
+    });
+
+  // Deleting the last design used to leave the studio saying "Loading" forever.
+  // An empty workspace is a normal state — it is where a new one starts — so it
+  // gets the two ways out rather than a spinner that never resolves.
+  if (!draft && templates && templates.length === 0) {
+    return (
+      <div className="grid min-h-[60vh] place-items-center">
+        <div className="card max-w-md p-8 text-center">
+          <ImageIcon size={28} className="mx-auto text-slate-300 dark:text-slate-600" />
+          <h1 className="mt-3 text-lg font-semibold">No designs yet</h1>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            Start from an empty canvas and lay it out yourself, or bring back the
+            starter designs to change rather than build.
+          </p>
+          <div className="mt-5 flex justify-center gap-2">
+            <button
+              className="btn-primary"
+              disabled={create.isPending}
+              onClick={() => create.mutate(blank())}
+            >
+              <FilePlus2 size={15} /> New design
+            </button>
+            <button className="btn-secondary" onClick={restore}>
+              Restore the starters
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!draft) return <p className="text-slate-400">Loading the studio…</p>;
 
   const dims = merge?.sizes?.[draft.size] ?? { width: 1080, height: 1080 };
+  /** A design stores a picture's id; the panel should say what it is called. */
+  const assetName = (id: string) =>
+    (assets ?? []).find((a) => a.id === id)?.name ?? "Deleted image";
   const layer = activeLayer !== null ? draft.layers[activeLayer] : null;
   const fonts = merge?.fonts ?? ["sans"];
 
@@ -378,19 +485,42 @@ export default function PosterStudio() {
             value={selectedId ?? ""}
             onChange={(id) => {
               const found = templates?.find((t) => t.id === id);
-              if (found) {
-                setSelectedId(id);
-                setDraft(structuredClone(found));
-                setActiveLayer(null);
-              }
+              if (found) leaveDraft(() => load(found));
             }}
             options={(templates ?? []).map((t) => ({ value: t.id, label: t.name }))}
           />
+          <button
+            className="btn-secondary"
+            title="Start a new design from scratch"
+            disabled={create.isPending}
+            onClick={() => leaveDraft(() => create.mutate(blank()))}
+          >
+            <FilePlus2 size={15} /> New
+          </button>
+          <button
+            className="btn-secondary !px-2"
+            title="Make a copy of this design to change freely"
+            disabled={create.isPending}
+            onClick={() => leaveDraft(() => create.mutate(duplicate()))}
+          >
+            <Copy size={15} />
+          </button>
+          <button
+            className="btn-secondary !px-2 text-red-500"
+            title="Delete this design"
+            onClick={() => setConfirmDelete(true)}
+          >
+            <Trash2 size={15} />
+          </button>
           <button className="btn-secondary" onClick={() => setBatchOpen(true)}>
             <Users size={15} /> Generate for…
           </button>
-          <button className="btn-primary" disabled={save.isPending} onClick={() => save.mutate()}>
-            {save.isPending ? "Saving…" : "Save design"}
+          <button
+            className="btn-primary"
+            disabled={save.isPending || !dirty}
+            onClick={() => save.mutate()}
+          >
+            {save.isPending ? "Saving…" : dirty ? "Save design" : "Saved"}
           </button>
         </div>
       </div>
@@ -466,6 +596,57 @@ export default function PosterStudio() {
                   Fade into a second colour
                 </Toggle>
               </div>
+              {/* A photo behind everything. It sits above the colour and below every
+                  layer, and almost always wants a scrim: white text over a photo of
+                  unknown brightness is the commonest way a design that looked right
+                  in the editor arrives unreadable. */}
+              <div className="mt-3 border-t border-slate-100 pt-3 dark:border-slate-800">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                    Background photo
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <button
+                      className="btn-ghost !px-2 !py-1 text-xs"
+                      onClick={() => setPicking("background")}
+                    >
+                      {draft.background?.image ? "Change" : "Add"}
+                    </button>
+                    {draft.background?.image && (
+                      <button
+                        className="btn-ghost !p-1 text-slate-400"
+                        title="Remove the photo"
+                        onClick={() => patchBackground({ image: null, overlay: undefined })}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </span>
+                </div>
+                {draft.background?.image && (
+                  <>
+                    <div className="mt-2 flex items-center gap-2">
+                      <AssetThumb
+                        id={draft.background.image}
+                        alt="Background"
+                        className="h-10 w-16 rounded border border-slate-200 object-cover dark:border-slate-700"
+                      />
+                      <span className="min-w-0 flex-1 truncate text-xs text-slate-500">
+                        {assetName(draft.background.image)}
+                      </span>
+                    </div>
+                    <div className="mt-2">
+                      <Toggle
+                        checked={!!draft.background.overlay}
+                        onChange={(v) => patchBackground({ overlay: v ? "#00000073" : undefined })}
+                      >
+                        Darken it so text stays readable
+                      </Toggle>
+                    </div>
+                  </>
+                )}
+              </div>
+
               {draft.background?.gradient?.to && (
                 <div className="mt-2 grid grid-cols-2 gap-2">
                   <Field label="Fade to">
@@ -525,7 +706,13 @@ export default function PosterStudio() {
                   >
                     <Icon size={13} className="shrink-0" />
                     <span className="min-w-0 flex-1 truncate">
-                      {l.type === "text" ? l.text : l.type === "image" ? l.source : l.type}
+                      {l.type === "text"
+                        ? l.text
+                        : l.type === "image"
+                          ? !l.source || l.source === "logo"
+                            ? "Workspace logo"
+                            : assetName(l.source)
+                          : l.type}
                     </span>
                     <button className="btn-ghost !p-1" title="Move down a layer"
                             onClick={(e) => { e.stopPropagation(); moveLayer(index, -1); }}>
@@ -721,12 +908,47 @@ export default function PosterStudio() {
 
               {layer.type === "image" && (
                 <>
+                  <Field label="Picture">
+                    <div className="flex items-center gap-2 rounded-lg border border-slate-200 p-2 dark:border-slate-700">
+                      {layer.source && layer.source !== "logo" ? (
+                        <AssetThumb
+                          id={layer.source}
+                          alt={assetName(layer.source)}
+                          className="h-10 w-10 shrink-0 rounded object-contain"
+                        />
+                      ) : (
+                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded bg-slate-100 text-slate-400 dark:bg-slate-800">
+                          <ImageIcon size={16} />
+                        </span>
+                      )}
+                      <span className="min-w-0 flex-1 truncate text-xs">
+                        {!layer.source || layer.source === "logo"
+                          ? "Workspace logo"
+                          : assetName(layer.source)}
+                      </span>
+                      <button
+                        className="btn-secondary !px-2 !py-1 text-xs"
+                        onClick={() => setPicking({ layer: activeLayer })}
+                      >
+                        Change
+                      </button>
+                    </div>
+                    {layer.source && layer.source !== "logo" && (
+                      <button
+                        className="btn-ghost mt-1 !px-1.5 !py-0.5 text-xs"
+                        onClick={() => patchLayer(activeLayer, { source: "logo" })}
+                      >
+                        Use the workspace logo instead
+                      </button>
+                    )}
+                  </Field>
                   <div className="grid grid-cols-2 gap-2">
-                    <Field label="Source">
-                      <Select
-                        value={layer.source ?? "logo"}
-                        onChange={(v) => patchLayer(activeLayer, { source: v })}
-                        options={[{ value: "logo", label: "Workspace logo" }]}
+                    <Field label="Corner radius">
+                      <NumberInput
+                        value={layer.radius}
+                        fallback={0}
+                        min={0}
+                        onChange={(v) => patchLayer(activeLayer, { radius: v })}
                       />
                     </Field>
                     <Field label="Fit" hint="Cover fills the box and crops; contain fits it all in">
@@ -740,12 +962,10 @@ export default function PosterStudio() {
                       />
                     </Field>
                   </div>
-                  <Field label="Corner radius">
-                    <NumberInput value={layer.radius} fallback={0} min={0}
-                                 onChange={(v) => patchLayer(activeLayer, { radius: v })} />
-                  </Field>
                   <p className="text-xs text-slate-400">
-                    Set the logo in Settings → Company. More sources arrive with the asset library.
+                    Pictures you upload stay in this workspace&rsquo;s library and can be
+                    reused across designs. The workspace logo comes from
+                    Settings → Company.
                   </p>
                 </>
               )}
@@ -756,6 +976,55 @@ export default function PosterStudio() {
           )}
         </div>
       </div>
+
+      <AssetPicker
+        open={picking !== null}
+        onClose={() => setPicking(null)}
+        title={picking === "background" ? "Background photo" : "Choose a picture"}
+        selectedId={
+          picking === "background"
+            ? draft.background?.image ?? null
+            : picking
+              ? draft.layers[picking.layer]?.source ?? null
+              : null
+        }
+        onPick={(asset) => {
+          if (picking === "background") {
+            // A photo almost always needs the scrim, so it arrives with one rather
+            // than leaving the agent to discover their text has vanished.
+            patchBackground({
+              image: asset.id,
+              overlay: draft.background?.overlay ?? "#00000073",
+            });
+          } else if (picking) {
+            patchLayer(picking.layer, { source: asset.id });
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={pending !== null}
+        onClose={() => setPending(null)}
+        onConfirm={() => { pending?.(); setPending(null); }}
+        title="Discard your changes?"
+        confirmLabel="Discard"
+        message={
+          `${draft.name} has edits you have not saved. Leaving now loses them — ` +
+          "cancel and press Save design first if you want to keep them."
+        }
+      />
+
+      <ConfirmDialog
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={() => selectedId && destroy.mutate(selectedId)}
+        busy={destroy.isPending}
+        title={`Delete ${draft.name}?`}
+        message={
+          "This design is removed for the whole workspace. Posters already generated " +
+          "from it are unaffected, and the pictures it used stay in your image library."
+        }
+      />
 
       {/* batch */}
       <Modal open={batchOpen} onClose={() => { setBatchOpen(false); setBatchResult(null); }}

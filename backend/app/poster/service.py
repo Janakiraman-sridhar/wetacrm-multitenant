@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.contacts.models import Contact
 from app.policies.models import Policy
 from app.poster.presets import MERGE_FIELDS, PRESETS
-from app.poster.models import PosterTemplate
+from app.poster.models import PosterAsset, PosterTemplate
 from app.services import storage
 from app.settings.models import Setting
 
@@ -67,26 +67,58 @@ def sample_values(db: Session, user=None) -> dict:
     return {**MERGE_FIELDS, **agency_values(db, user)}
 
 
+#: Sources the renderer resolves by name rather than by asset id.
+BUILT_IN_SOURCES = {"logo"}
+
+
+def _sources(template: dict) -> set[str]:
+    """Every image a design asks for, background included."""
+    wanted = {
+        str(layer.get("source") or layer.get("asset_key"))
+        for layer in template.get("layers") or []
+        if layer.get("type") == "image" and (layer.get("source") or layer.get("asset_key"))
+    }
+    background_image = (template.get("background") or {}).get("image")
+    if background_image:
+        wanted.add(str(background_image))
+    return wanted
+
+
 def load_assets(db: Session, template: dict) -> dict:
-    """Fetch the images a template refers to.
+    """Fetch the images a template refers to, keyed the way the renderer asks for them.
 
-    Only the logo for now; an uploaded background or agent photo resolves through
-    the same map once the asset library lands.
+    A design names its pictures: `logo` is the workspace logo, and anything else is
+    a `poster_assets` id. Only what this design actually uses is read — a workspace
+    with forty uploaded pictures should not pay for thirty-nine of them on every
+    preview keystroke.
+
+    A missing or unreadable image is left out of the map rather than raised. The
+    renderer skips an image layer it has no bytes for, so a picture someone deleted
+    costs that layer, not the whole poster.
     """
-    assets: dict[str, bytes] = {}
-    needs_logo = (template.get("background") or {}).get("image") == "logo" or any(
-        layer.get("source") == "logo" for layer in template.get("layers") or []
-    )
-    if not needs_logo:
-        return assets
+    wanted = _sources(template)
+    if not wanted:
+        return {}
 
-    profile = db.scalar(select(Setting).where(Setting.key == "company_profile"))
-    logo_key = (profile.value or {}).get("logo_key") if profile else None
-    if logo_key:
-        try:
-            assets["logo"] = storage.read_file(logo_key)
-        except Exception:
-            log.warning("Could not load the workspace logo for a poster")
+    assets: dict[str, bytes] = {}
+
+    if BUILT_IN_SOURCES & wanted:
+        profile = db.scalar(select(Setting).where(Setting.key == "company_profile"))
+        logo_key = (profile.value or {}).get("logo_key") if profile else None
+        if logo_key:
+            try:
+                assets["logo"] = storage.read_file(logo_key)
+            except Exception:
+                log.warning("Could not load the workspace logo for a poster")
+
+    ids = wanted - BUILT_IN_SOURCES
+    if ids:
+        rows = db.scalars(select(PosterAsset).where(PosterAsset.id.in_(ids))).all()
+        for row in rows:
+            try:
+                assets[row.id] = storage.read_file(row.file_key)
+            except Exception:
+                log.warning("Poster asset %s could not be read", row.id)
     return assets
 
 

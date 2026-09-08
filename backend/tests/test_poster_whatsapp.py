@@ -542,3 +542,180 @@ def test_a_nonsense_opacity_is_treated_as_opaque_rather_than_crashing():
     assert _opacity_factor(5) == 1.0
     assert _opacity_factor(-2) == 0.0
     assert _opacity_factor(0.25) == 0.25
+
+
+# --- the image library --------------------------------------------------------
+#
+# The point of these: an agent should be able to put their own picture on a poster,
+# and the picture should not be able to put anything on the agent. So what a design
+# can draw and what an upload can be are tested together.
+
+def _png(size=(60, 40), colour=(220, 80, 40)) -> bytes:
+    from io import BytesIO
+
+    from PIL import Image
+
+    buf = BytesIO()
+    Image.new("RGB", size, colour).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _open(png: bytes):
+    from io import BytesIO
+
+    from PIL import Image
+
+    return Image.open(BytesIO(png)).convert("RGB")
+
+
+def _upload(client, world, data: bytes, name="picture.png", claimed="image/png"):
+    return client.post(
+        f"{API}/poster/assets",
+        files={"file": (name, data, claimed)},
+        headers=world.auth(),
+    )
+
+
+@pytest.fixture()
+def asset(client, alpha):
+    resp = _upload(client, alpha, _png((600, 400)))
+    assert resp.status_code == 200, resp.text
+    row = resp.json()
+    yield row
+    client.delete(f"{API}/poster/assets/{row['id']}", headers=alpha.auth())
+
+
+def test_an_uploaded_picture_records_what_it_actually_is(asset):
+    """Dimensions come from the file, not from the form."""
+    assert (asset["width"], asset["height"]) == (600, 400)
+    assert asset["mime_type"] == "image/png"
+    assert asset["size_bytes"] > 0
+
+
+def test_the_stored_type_comes_from_the_bytes_not_the_header(client, alpha):
+    """A PNG announced as a JPEG is stored as what it is.
+
+    Whatever is recorded here is the `Content-Type` the file is later served with,
+    so believing the uploader would let them choose it.
+    """
+    resp = _upload(client, alpha, _png(), name="lie.jpg", claimed="image/jpeg")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["mime_type"] == "image/png"
+    client.delete(f"{API}/poster/assets/{resp.json()['id']}", headers=alpha.auth())
+
+
+@pytest.mark.parametrize(
+    "name,data,claimed",
+    [
+        ("doc.pdf", b"%PDF-1.4\ncontent", "application/pdf"),
+        ("x.svg", b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+         "image/svg+xml"),
+        ("page.html", b"<!doctype html><script>alert(1)</script>", "text/html"),
+        ("empty.png", b"", "image/png"),
+        # PNG magic then rubbish: passes the sniff, fails to decode. Accepting it
+        # would mean a picture that uploads fine and then silently never draws.
+        ("broken.png", b"\x89PNG\r\n\x1a\n" + b"\x00" * 32, "image/png"),
+    ],
+)
+def test_what_a_poster_will_not_take(client, alpha, name, data, claimed):
+    resp = _upload(client, alpha, data, name=name, claimed=claimed)
+    assert resp.status_code == 400, f"{name} was accepted: {resp.text}"
+
+
+def test_the_refusal_says_what_the_file_actually_was(client, alpha):
+    """"Upload failed" tells an agent nothing about what to do next."""
+    resp = _upload(client, alpha, b"%PDF-1.4\nx", name="scan.pdf", claimed="application/pdf")
+    assert "application/pdf" in resp.json()["detail"]
+
+
+def test_a_picture_is_served_as_the_type_it_passed_as(client, alpha, asset):
+    resp = client.get(f"{API}/poster/assets/{asset['id']}/file", headers=alpha.auth())
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/png"
+    assert resp.headers["x-content-type-options"] == "nosniff"
+
+
+def test_a_picture_does_not_cross_tenants(client, alpha, bravo, asset):
+    """The row and the bytes are both refused, not just the listing."""
+    assert not [
+        a for a in client.get(f"{API}/poster/assets", headers=bravo.auth()).json()
+        if a["id"] == asset["id"]
+    ]
+    assert client.get(f"{API}/poster/assets/{asset['id']}/file",
+                      headers=bravo.auth()).status_code == 404
+    assert client.delete(f"{API}/poster/assets/{asset['id']}",
+                         headers=bravo.auth()).status_code == 404
+
+
+def test_a_design_can_draw_an_uploaded_picture(client, alpha, asset):
+    spec = {
+        "size": "square",
+        "background": {"color": "#000000"},
+        "layers": [{"type": "image", "x": 100, "y": 100, "w": 400, "h": 400,
+                    "source": asset["id"], "fit": "cover"}],
+    }
+    drawn = client.post(f"{API}/poster/preview", json=spec, headers=alpha.auth())
+    assert drawn.status_code == 200, drawn.text
+    image = _open(drawn.content)
+    assert image.getpixel((300, 300)) == (220, 80, 40), "the picture was not drawn"
+    assert image.getpixel((900, 900)) == (0, 0, 0), "it drew outside its box"
+
+
+def test_a_picture_can_be_the_background_and_the_scrim_darkens_it(client, alpha, asset):
+    """The scrim is what keeps white text readable over a photo of unknown brightness."""
+    plain = {"size": "square", "background": {"image": asset["id"]}, "layers": []}
+    dark = {"size": "square",
+            "background": {"image": asset["id"], "overlay": "#00000073"}, "layers": []}
+    a = _open(client.post(f"{API}/poster/preview", json=plain, headers=alpha.auth()).content)
+    b = _open(client.post(f"{API}/poster/preview", json=dark, headers=alpha.auth()).content)
+    assert sum(a.getpixel((540, 540))) > sum(b.getpixel((540, 540)))
+
+
+def test_a_deleted_picture_costs_its_layer_not_the_poster(client, alpha):
+    """Someone will delete a picture a design still uses. It must not 500."""
+    created = _upload(client, alpha, _png()).json()
+    spec = {
+        "size": "square",
+        "background": {"color": "#000000"},
+        "layers": [
+            {"type": "image", "x": 100, "y": 100, "w": 400, "h": 400, "source": created["id"]},
+            {"type": "text", "x": 0, "y": 700, "w": 1080, "text": "Still here",
+             "size": 60, "color": "#FFFFFF", "align": "center"},
+        ],
+    }
+    assert client.delete(f"{API}/poster/assets/{created['id']}",
+                         headers=alpha.auth()).status_code == 200
+
+    after = client.post(f"{API}/poster/preview", json=spec, headers=alpha.auth())
+    assert after.status_code == 200, after.text
+    image = _open(after.content)
+    assert image.getpixel((300, 300)) == (0, 0, 0), "a deleted picture still drew"
+    # The rest of the design survives — that is the whole point.
+    assert any(px == (255, 255, 255) for px in _colours(image))
+
+
+def test_only_the_pictures_a_design_names_are_fetched():
+    """A workspace with forty pictures should not load thirty-nine per keystroke."""
+    from app.poster.service import _sources
+
+    spec = {
+        "background": {"color": "#fff", "image": "bg-asset"},
+        "layers": [
+            {"type": "image", "source": "one"},
+            {"type": "image", "asset_key": "two"},
+            {"type": "text", "text": "hello", "source": "not-an-image-layer"},
+            {"type": "image"},  # nothing chosen yet
+            {"type": "rect", "fill": "#000"},
+        ],
+    }
+    assert _sources(spec) == {"bg-asset", "one", "two"}
+    assert _sources({"layers": [], "background": {}}) == set()
+
+
+def test_an_empty_design_still_renders(client, alpha):
+    """A new design starts blank; a studio that cannot preview one is unusable."""
+    resp = client.post(f"{API}/poster/preview",
+                       json={"size": "square", "layers": [], "background": {"color": "#FFFFFF"}},
+                       headers=alpha.auth())
+    assert resp.status_code == 200
+    assert resp.content[:8] == PNG_MAGIC

@@ -1,6 +1,10 @@
 """Poster Studio and WhatsApp sending."""
 
-from fastapi import APIRouter, Depends, Query, Response
+import io
+from typing import Any
+
+from PIL import Image
+from fastapi import APIRouter, Depends, Query, Response, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,9 +18,11 @@ from app.core.schemas import Message, ORMModel
 from app.database.session import get_db
 from app.poster import render as poster_render
 from app.poster import service
-from app.poster.models import POSTER_CATEGORIES, POSTER_SIZES, PosterBatch, PosterTemplate, WhatsAppMessage
+from app.poster.models import (
+    POSTER_CATEGORIES, POSTER_SIZES, PosterAsset, PosterBatch, PosterTemplate, WhatsAppMessage,
+)
 from app.poster.presets import MERGE_FIELDS
-from app.services import storage, whatsapp
+from app.services import mime, storage, whatsapp
 from app.users.models import User
 
 router = APIRouter(tags=["poster"], dependencies=[Depends(require_module("poster"))])
@@ -61,6 +67,17 @@ class PreviewIn(BaseModel):
     layers: list[dict] = []
     background: dict = {}
     contact_id: str | None = None
+
+
+class PosterAssetOut(ORMModel):
+    id: str
+    name: str
+    file_key: str
+    mime_type: str
+    width: int
+    height: int
+    size_bytes: int
+    created_at: Any = None
 
 
 class BatchIn(BaseModel):
@@ -153,6 +170,115 @@ def delete_template(
     db.delete(template)
     db.commit()
     return {"detail": "Template deleted"}
+
+
+# --- the image library --------------------------------------------------------
+
+#: Big enough for a photo shot on a phone, small enough that a poster preview stays
+#: quick — the renderer scales everything into a 1080px canvas anyway.
+MAX_ASSET_BYTES = 8 * 1024 * 1024
+
+#: Raster images only. An SVG is a document that can run script, and every other
+#: file type is useless on a poster — so the allow-list is the whole defence and it
+#: can afford to be short. Decided from the bytes, never from the upload header.
+ASSET_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+
+
+@router.get("/poster/assets", response_model=list[PosterAssetOut],
+            dependencies=[Depends(require_perm("contacts:read"))])
+def list_assets(db: Session = Depends(get_db)):
+    return db.scalars(select(PosterAsset).order_by(PosterAsset.created_at.desc())).all()
+
+
+@router.post("/poster/assets", response_model=PosterAssetOut)
+async def upload_asset(
+    file: UploadFile,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("contacts:write")),
+):
+    """Add a picture to this workspace's poster library.
+
+    Two checks that are not the same check: the type must be a raster image the
+    browser will accept, *and* Pillow must be able to open it. A file that passes
+    the first and fails the second would be accepted here and then silently dropped
+    at render time, so the agent would place a picture, see nothing, and have no way
+    to find out why.
+    """
+    data = await file.read()
+    if not data:
+        raise AppError("That file is empty", 400)
+    if len(data) > MAX_ASSET_BYTES:
+        raise AppError("Images are limited to 8 MB", 413)
+
+    content_type = mime.sniff(data, file.content_type)
+    if content_type not in ASSET_TYPES:
+        raise AppError(
+            "Posters take PNG, JPEG, WebP or GIF images. "
+            f"That file is {content_type}.", 400,
+        )
+
+    try:
+        probe = Image.open(io.BytesIO(data))
+        probe.verify()
+        width, height = Image.open(io.BytesIO(data)).size
+    except Exception:
+        raise AppError("That image could not be read — it may be damaged", 400)
+
+    key = storage.save_file(data, file.filename or "image", content_type)
+    asset = PosterAsset(
+        name=(file.filename or "image")[:200],
+        file_key=key,
+        mime_type=content_type,
+        width=width,
+        height=height,
+        size_bytes=len(data),
+        uploaded_by_id=user.id,
+    )
+    db.add(asset)
+    db.flush()
+    audit(db, user.id, "upload", "poster_asset", asset.id, {"name": asset.name})
+    db.commit()
+    return asset
+
+
+@router.get("/poster/assets/{asset_id}/file",
+            dependencies=[Depends(require_perm("contacts:read"))])
+def asset_file(asset_id: str, db: Session = Depends(get_db)):
+    """Serve an uploaded image.
+
+    Served as the type sniffed at upload with `nosniff`, not as whatever the
+    uploader's browser claimed — the allow-list at upload is only worth anything if
+    the file comes back as the type that passed it.
+    """
+    asset = get_or_404(db, PosterAsset, asset_id, "Image")
+    try:
+        data = storage.read_file(asset.file_key)
+    except (storage.StorageAccessDenied, FileNotFoundError):
+        raise AppError("Not found", 404)
+    return Response(
+        content=data,
+        media_type=asset.mime_type,
+        headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=300"},
+    )
+
+
+@router.delete("/poster/assets/{asset_id}", response_model=Message)
+def delete_asset(
+    asset_id: str, db: Session = Depends(get_db),
+    user: User = Depends(require_perm("contacts:write")),
+):
+    """Remove a picture from the library.
+
+    Designs still pointing at it keep the reference; `load_assets` finds no bytes
+    and the renderer skips that layer, so a deleted picture costs its own layer
+    rather than the whole poster.
+    """
+    asset = get_or_404(db, PosterAsset, asset_id, "Image")
+    storage.delete_file(asset.file_key)
+    db.delete(asset)
+    audit(db, user.id, "delete", "poster_asset", asset_id, {"name": asset.name})
+    db.commit()
+    return {"detail": "Image deleted"}
 
 
 @router.post("/poster/seed-presets", response_model=Message)

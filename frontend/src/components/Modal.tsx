@@ -51,6 +51,8 @@ export function ConfirmDialog({
   title,
   message,
   busy = false,
+  confirmLabel = "Delete",
+  busyLabel = "Deleting…",
 }: {
   open: boolean;
   onClose: () => void;
@@ -58,6 +60,11 @@ export function ConfirmDialog({
   title: string;
   message: string;
   busy?: boolean;
+  /** The button says what it will do. Not every confirmation is a deletion, and
+   *  a red "Delete" on a "discard your unsaved changes?" prompt reads as though
+   *  it will destroy the whole record. */
+  confirmLabel?: string;
+  busyLabel?: string;
 }) {
   return (
     <Modal open={open} onClose={onClose} title={title}>
@@ -67,7 +74,7 @@ export function ConfirmDialog({
           Cancel
         </button>
         <button className="btn-danger" onClick={onConfirm} disabled={busy}>
-          {busy ? "Deleting…" : "Delete"}
+          {busy ? busyLabel ?? `${confirmLabel}…` : confirmLabel}
         </button>
       </div>
     </Modal>

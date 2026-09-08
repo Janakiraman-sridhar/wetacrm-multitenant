@@ -3,6 +3,46 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 
 /**
+ * Fetch an image that needs the caller's credentials, as an object URL.
+ *
+ * `<img src>` cannot send an Authorization header, and putting the token in the
+ * query string would leak it into browser history, the referer header and any
+ * proxy log. So the bytes come through the API client instead. The object URL is
+ * revoked on unmount and whenever the source changes — a studio that renders a
+ * preview on every keystroke leaks a blob per keystroke otherwise.
+ */
+export function useAuthedImage(path: string, params?: Record<string, string>) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const key = JSON.stringify(params ?? {});
+
+  useEffect(() => {
+    let objectUrl: string | null = null;
+    let cancelled = false;
+    setFailed(false);
+
+    (async () => {
+      try {
+        const response = await api.get(path, { params, responseType: "blob" });
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(response.data as Blob);
+        setUrl(objectUrl);
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path, key]);
+
+  return { url, failed };
+}
+
+/**
  * A generated poster, fetched with the caller's credentials.
  *
  * `<img src>` cannot send an Authorization header, and the poster endpoint needs
@@ -20,32 +60,7 @@ export function PosterImage({
   alt: string;
   className?: string;
 }) {
-  const [url, setUrl] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    let objectUrl: string | null = null;
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const response = await api.get("/poster/file", {
-          params: { key: fileKey },
-          responseType: "blob",
-        });
-        if (cancelled) return;
-        objectUrl = URL.createObjectURL(response.data as Blob);
-        setUrl(objectUrl);
-      } catch {
-        if (!cancelled) setFailed(true);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [fileKey]);
+  const { url, failed } = useAuthedImage("/poster/file", { key: fileKey });
 
   if (failed) {
     return (

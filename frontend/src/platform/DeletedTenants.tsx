@@ -68,27 +68,30 @@ export function DeletedTenants() {
         support to restore one while it is still here.
       </p>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+      <div className="table-scroll -mx-5 overflow-x-auto px-5">
+        <table className="w-full">
           <thead>
-            <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-400 dark:border-slate-800">
-              <th className="px-2 py-2 font-semibold">Workspace</th>
-              <th className="px-2 py-2 font-semibold">Deleted</th>
-              <th className="px-2 py-2 font-semibold">Purged in</th>
-              <th className="px-2 py-2" />
+            <tr>
+              <th className="th">Workspace</th>
+              <th className="th">Deleted</th>
+              <th className="th">Purged in</th>
+              <th className="th" />
             </tr>
           </thead>
           <tbody>
             {rows.map((t) => (
-              <tr key={t.id} className="border-b border-slate-100 last:border-0 dark:border-slate-800/60">
-                <td className="px-2 py-2">
+              <tr
+                key={t.id}
+                className="transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40"
+              >
+                <td className="td">
                   <span className="block font-medium">{t.name}</span>
                   <span className="block text-xs text-slate-400">/{t.slug}</span>
                 </td>
-                <td className="px-2 py-2 text-slate-500 dark:text-slate-400">
+                <td className="td text-slate-500 dark:text-slate-400">
                   {formatDate(t.deleted_at)}
                 </td>
-                <td className="px-2 py-2">
+                <td className="td">
                   <span
                     className={clsx(
                       "badge",
@@ -102,7 +105,7 @@ export function DeletedTenants() {
                       : `${t.days_until_purge} day${t.days_until_purge === 1 ? "" : "s"}`}
                   </span>
                 </td>
-                <td className="px-2 py-2 text-right">
+                <td className="td text-right">
                   {t.protected ? (
                     <span className="text-xs text-slate-400">protected</span>
                   ) : (

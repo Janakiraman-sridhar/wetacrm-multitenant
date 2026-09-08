@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
-  Cake, CalendarClock, Download, Handshake, Landmark, Repeat, Trophy, TrendingUp, Wallet,
+  Cake, CalendarClock, Download, Handshake, Landmark, MessageCircle, Repeat, Trophy,
+  TrendingUp, Wallet,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
@@ -96,42 +97,47 @@ function Table({
   call?: (row: any) => { phone?: string | null; message: string };
   empty?: string;
 }) {
-  if (!rows.length) return <p className="py-8 text-center text-sm text-slate-400">{empty}</p>;
+  if (!rows.length) return <p className="py-10 text-center text-sm text-slate-400">{empty}</p>;
   return (
-    <div className="max-h-[26rem] overflow-auto">
-      <table className="w-full text-sm">
-        <thead className="sticky top-0 bg-white dark:bg-slate-900">
-          <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-400 dark:border-slate-800">
+    <div className="table-scroll -mx-4 max-h-[26rem] overflow-auto px-4">
+      <table className="w-full">
+        <thead>
+          <tr>
             {columns.map((c) => (
-              <th key={c.key} className={clsx("px-2 py-2 font-semibold", c.align === "right" && "text-right")}>
+              <th key={c.key} className={clsx("th", c.align === "right" && "!text-right")}>
                 {c.label}
               </th>
             ))}
-            {call && <th className="px-2 py-2" />}
+            {call && <th className="th" />}
           </tr>
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={row.policy_id ?? row.contact_id ?? row.loan_id ?? i} className="border-b border-slate-100 dark:border-slate-800/60">
+            <tr
+              key={row.policy_id ?? row.contact_id ?? row.loan_id ?? i}
+              className="transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40"
+            >
               {columns.map((c) => (
-                <td key={c.key} className={clsx("px-2 py-2", c.align === "right" && "text-right tabular-nums")}>
+                <td key={c.key} className={clsx("td", c.align === "right" && "text-right tabular-nums")}>
                   {c.render ? c.render(row) : row[c.key] ?? "—"}
                 </td>
               ))}
               {call && (
-                <td className="px-2 py-2 text-right">
+                <td className="td text-right">
                   {(() => {
                     const target = call(row);
                     return target.phone ? (
                       <button
-                        className="btn-ghost !px-2 !py-1 text-xs text-emerald-600"
+                        className="btn-ghost !px-2 !py-1 text-xs text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
                         onClick={() => openWhatsApp(target.phone, target.message)}
                         title={`WhatsApp ${target.phone}`}
                       >
-                        WhatsApp
+                        <MessageCircle size={13} /> WhatsApp
                       </button>
                     ) : (
-                      <span className="text-xs text-slate-300">no number</span>
+                      <span className="text-xs text-slate-400 dark:text-slate-600">
+                        no number
+                      </span>
                     );
                   })()}
                 </td>
@@ -189,7 +195,9 @@ export function InsuranceReports() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-slate-400">{active.description}.</p>
+        <h2 className="text-sm font-semibold text-slate-600 dark:text-slate-300">
+          {active.label}
+        </h2>
         <div className="flex items-center gap-2">
           {window === "days" && (
             <select className="input !w-auto !py-1.5 text-sm" value={days} onChange={(e) => setDays(Number(e.target.value))}>
@@ -217,13 +225,13 @@ export function InsuranceReports() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
-        {REPORTS.map(({ key, label, icon: Icon }) => (
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {REPORTS.map(({ key, label, icon: Icon, description }) => (
           <button
             key={key}
             onClick={() => setReport(key)}
             className={clsx(
-              "card flex flex-col items-start gap-2 p-3 text-left transition-all",
+              "card flex items-start gap-3 p-3.5 text-left transition-all",
               report === key
                 ? "border-primary-400 ring-2 ring-primary-500/30 dark:border-primary-600"
                 : "hover:border-slate-300 hover:shadow-md dark:hover:border-slate-600"
@@ -231,15 +239,20 @@ export function InsuranceReports() {
           >
             <span
               className={clsx(
-                "flex h-8 w-8 items-center justify-center rounded-lg",
+                "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
                 report === key
                   ? "bg-primary-600 text-white"
                   : "bg-primary-50 text-primary-600 dark:bg-primary-900/40 dark:text-primary-300"
               )}
             >
-              <Icon size={16} />
+              <Icon size={17} />
             </span>
-            <span className="text-xs font-semibold leading-tight">{label}</span>
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold leading-tight">{label}</span>
+              <span className="mt-0.5 block text-xs leading-snug text-slate-400">
+                {description}
+              </span>
+            </span>
           </button>
         ))}
       </div>
@@ -288,7 +301,14 @@ function Report({
               { key: "customer", label: "Customer" },
               { key: "policy_number", label: "Policy" },
               { key: "insurer", label: "Insurer" },
-              { key: "product_line", label: "Line", render: (r) => <span className="badge">{r.product_line}</span> },
+              {
+                key: "product_line", label: "Line",
+                render: (r) => (
+                  <span className="badge bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                    {r.product_line}
+                  </span>
+                ),
+              },
               { key: "expiry_date", label: "Expires", render: (r) => formatDate(r.expiry_date) },
               {
                 key: "days_to_expiry", label: "Days", align: "right",
@@ -320,7 +340,7 @@ function Report({
           <Section title="New vs renewal premium" wide>
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={byMonth} barCategoryGap="25%">
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" strokeOpacity={0.4} />
+                <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
                 <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} width={70} />
                 <Tooltip formatter={(v: any) => inr(v)} />
@@ -465,7 +485,15 @@ function Report({
               { key: "customer", label: "Customer" },
               {
                 key: "holds", label: "Holds",
-                render: (r) => r.holds.map((l: string) => <span key={l} className="badge mr-1">{l}</span>),
+                render: (r) =>
+                  r.holds.map((l: string) => (
+                    <span
+                      key={l}
+                      className="badge mr-1 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                    >
+                      {l}
+                    </span>
+                  )),
               },
               {
                 key: "missing", label: "Missing",
@@ -589,7 +617,7 @@ export function CustomerGrowth() {
     <Section title="Customer growth">
       <ResponsiveContainer width="100%" height={220}>
         <LineChart data={rows}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" strokeOpacity={0.4} />
+          <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
           <XAxis dataKey="label" tick={{ fontSize: 11 }} />
           <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
           <Tooltip />

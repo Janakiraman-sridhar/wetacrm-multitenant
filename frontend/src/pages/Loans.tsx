@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { LayoutGrid, Landmark, List } from "lucide-react";
+import { LayoutGrid, List } from "lucide-react";
 import { useState } from "react";
 import { z } from "zod";
 
 import { CrudPage, FieldDef } from "@/components/CrudPage";
 import { CustomerChip } from "@/components/CustomerChip";
+import { Avatar, PageSpinner } from "@/components/ui";
+import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { api, errorMessage } from "@/lib/api";
 import { FilterFieldDef } from "@/lib/filters";
@@ -76,83 +78,149 @@ const defaults = {
   rejected_reason: "", remarks: "",
 };
 
-/** Open cases grouped by stage, with the value sitting in each. */
+/** A colour per stage, so a column is recognisable before its label is read. */
+const STAGE_DOT: Record<string, string> = {
+  enquiry: "bg-slate-400",
+  documents: "bg-blue-500",
+  logged_in: "bg-indigo-500",
+  sanctioned: "bg-amber-500",
+};
+
+/**
+ * Open cases grouped by stage.
+ *
+ * Drag-and-drop rather than arrow buttons, because the Sales Pipeline next door
+ * already taught this workspace that a board is something you drag on — and two
+ * boards in one product that move cards differently is the kind of detail that makes
+ * software feel assembled rather than designed.
+ */
 function LoanBoard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { show } = useValuePrivacy();
+  const { hasPerm } = useAuth();
+  const canWrite = hasPerm("loans:write");
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overStage, setOverStage] = useState<string | null>(null);
 
-  const { data: columns } = useQuery({
+  const { data: columns, isLoading } = useQuery({
     queryKey: ["loans", "board"],
-    queryFn: async () =>
-      (await api.get<LoanBoardColumn[]>("/loans/board")).data,
+    queryFn: async () => (await api.get<LoanBoardColumn[]>("/loans/board")).data,
   });
 
   const move = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) =>
       (await api.patch(`/loans/${id}`, { status })).data,
     onSuccess: () => {
-      toast("Case moved");
       queryClient.invalidateQueries({ queryKey: ["loans"] });
       queryClient.invalidateQueries({ queryKey: ["/loans"] });
     },
-    onError: (err) => toast(errorMessage(err), "error"),
+    onError: (err) => {
+      toast(errorMessage(err), "error");
+      queryClient.invalidateQueries({ queryKey: ["loans"] });
+    },
   });
 
-  const order = (columns ?? []).map((c) => c.status);
+  const onDrop = (status: string) => {
+    setOverStage(null);
+    const id = dragId;
+    setDragId(null);
+    if (!id) return;
+
+    const from = (columns ?? []).find((c) => c.loans.some((l) => l.id === id));
+    if (!from || from.status === status) return;
+
+    // Move the card in the cache first: waiting for a round trip before the card
+    // lands makes a drag feel like it did not take.
+    queryClient.setQueryData<LoanBoardColumn[]>(["loans", "board"], (cols) => {
+      if (!cols) return cols;
+      const loan = cols.flatMap((c) => c.loans).find((l) => l.id === id);
+      if (!loan) return cols;
+      return cols.map((c) => ({
+        ...c,
+        loans:
+          c.status === status
+            ? [{ ...loan, status: status as Loan["status"] }, ...c.loans.filter((l) => l.id !== id)]
+            : c.loans.filter((l) => l.id !== id),
+      }));
+    });
+    move.mutate({ id, status });
+  };
+
+  if (isLoading) return <PageSpinner />;
 
   return (
-    <div className="grid min-h-0 flex-1 gap-3 overflow-x-auto md:grid-cols-4">
-      {(columns ?? []).map((column, index) => (
-        <div key={column.status} className="card flex min-h-0 flex-col p-3">
-          <div className="mb-2 flex items-baseline justify-between">
-            <h3 className="text-sm font-semibold">{column.label}</h3>
-            <span className="text-xs text-slate-400">{column.loans.length}</span>
-          </div>
-          <p className="mb-2 text-xs text-slate-400">{show(inr(column.value))} requested</p>
-          <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto">
-            {column.loans.map((loan) => (
-              <li key={loan.id} className="rounded-lg border border-slate-200 p-2.5 dark:border-slate-800">
-                <p className="truncate text-sm font-medium">{loan.customer?.full_name}</p>
-                <p className="text-xs text-slate-400">
-                  {loan.loan_type} · {show(inr(loan.amount_requested))}
-                </p>
-                {loan.lender?.name && (
-                  <p className="truncate text-xs text-slate-400">{loan.lender.name}</p>
+    <div className="flex gap-3 overflow-x-auto pb-4">
+      {(columns ?? []).map((column) => (
+        <div
+          key={column.status}
+          className={clsx(
+            "flex w-72 shrink-0 flex-col rounded-xl border bg-slate-100/60 dark:bg-slate-900/60",
+            overStage === column.status
+              ? "border-primary-400 ring-2 ring-primary-400/30"
+              : "border-slate-200 dark:border-slate-800"
+          )}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setOverStage(column.status);
+          }}
+          onDragLeave={() => setOverStage((s) => (s === column.status ? null : s))}
+          onDrop={() => onDrop(column.status)}
+        >
+          <div className="flex items-center justify-between px-3 py-2.5">
+            <div className="flex items-center gap-2">
+              <span
+                className={clsx(
+                  "h-2 w-2 rounded-full",
+                  STAGE_DOT[column.status] ?? "bg-slate-400"
                 )}
-                <div className="mt-1.5 flex gap-1">
-                  {index > 0 && (
-                    <button
-                      className="btn-ghost !px-1.5 !py-0.5 text-xs"
-                      title={`Move back to ${columns![index - 1].label}`}
-                      onClick={() => move.mutate({ id: loan.id, status: order[index - 1] })}
-                    >
-                      ←
-                    </button>
+              />
+              <span className="text-sm font-semibold">{column.label}</span>
+              <span className="rounded-full bg-slate-200 px-1.5 text-xs text-slate-500 dark:bg-slate-800">
+                {column.loans.length}
+              </span>
+            </div>
+            <span className="text-xs font-medium text-slate-400">
+              {show(inr(column.value))}
+            </span>
+          </div>
+
+          <div className="flex min-h-24 flex-1 flex-col gap-2 px-2 pb-2">
+            {column.loans.map((loan) => (
+              <div
+                key={loan.id}
+                draggable={canWrite}
+                onDragStart={() => setDragId(loan.id)}
+                onDragEnd={() => setDragId(null)}
+                className={clsx(
+                  "card p-3 text-sm transition-shadow",
+                  canWrite && "cursor-grab hover:shadow-md active:cursor-grabbing",
+                  dragId === loan.id && "opacity-50"
+                )}
+              >
+                <p className="truncate font-medium leading-snug">
+                  {loan.customer?.full_name ?? "—"}
+                </p>
+                <p className="mt-0.5 truncate text-xs text-slate-400">
+                  {loan.loan_type}
+                  {loan.lender?.name ? ` · ${loan.lender.name}` : ""}
+                </p>
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <span className="badge bg-primary-50 font-semibold text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
+                    {show(inr(loan.amount_sanctioned || loan.amount_requested))}
+                  </span>
+                  {loan.owner && (
+                    <Avatar first={loan.owner.first_name} last={loan.owner.last_name} size={22} />
                   )}
-                  {index < order.length - 1 && (
-                    <button
-                      className="btn-ghost !px-1.5 !py-0.5 text-xs"
-                      title={`Move on to ${columns![index + 1].label}`}
-                      onClick={() => move.mutate({ id: loan.id, status: order[index + 1] })}
-                    >
-                      →
-                    </button>
-                  )}
-                  <button
-                    className="btn-ghost !px-1.5 !py-0.5 text-xs text-emerald-600"
-                    title="Mark disbursed"
-                    onClick={() => move.mutate({ id: loan.id, status: "disbursed" })}
-                  >
-                    Disbursed
-                  </button>
                 </div>
-              </li>
+              </div>
             ))}
             {column.loans.length === 0 && (
-              <li className="py-6 text-center text-xs text-slate-400">Nothing here.</li>
+              <p className="py-6 text-center text-xs text-slate-400">
+                {canWrite ? "Drop cases here" : "Nothing here"}
+              </p>
             )}
-          </ul>
+          </div>
         </div>
       ))}
     </div>
@@ -307,11 +375,13 @@ export default function Loans() {
   if (view === "board") {
     return (
       <div className="flex h-full min-h-0 flex-col gap-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="flex items-center gap-2 text-xl font-semibold">
-            <Landmark size={20} className="text-primary-600 dark:text-primary-400" />
-            Loans
-          </h1>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-semibold">Loans</h1>
+            <p className="text-sm text-slate-400">
+              Drag a case between stages to move it on.
+            </p>
+          </div>
           <div className="flex items-center gap-2">{toolbar}</div>
         </div>
         <LoanBoard />

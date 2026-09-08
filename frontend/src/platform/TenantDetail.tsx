@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { ConfirmDialog, Modal } from "@/components/Modal";
+import { Avatar } from "@/components/ui";
 import { useToast } from "@/context/ToastContext";
 import { api, errorMessage } from "@/lib/api";
 import { formatDate, formatDateTime } from "@/lib/format";
@@ -232,38 +233,48 @@ export default function TenantDetail() {
           look at their data, ask them to share it, or add yourself as one of their users
           from inside the workspace.
         </p>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="table-scroll -mx-5 overflow-x-auto px-5">
+          <table className="w-full">
             <thead>
-              <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-400 dark:border-slate-800">
-                <th className="px-2 py-2 font-semibold">Name</th>
-                <th className="px-2 py-2 font-semibold">Email</th>
-                <th className="px-2 py-2 font-semibold">Role</th>
-                <th className="px-2 py-2 font-semibold">Last sign-in</th>
+              <tr>
+                <th className="th">Name</th>
+                <th className="th">Email</th>
+                <th className="th">Role</th>
+                <th className="th">Last sign-in</th>
               </tr>
             </thead>
             <tbody>
               {(t.users ?? []).map((u) => (
-                <tr key={u.id} className="border-b border-slate-100 dark:border-slate-800/60">
-                  <td className="px-2 py-2">
-                    {u.full_name || "—"}
-                    {u.is_owner && (
-                      <span className="badge ml-2 bg-primary-50 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
-                        owner
-                      </span>
-                    )}
-                    {!u.is_active && <span className="badge ml-2">inactive</span>}
+                <tr
+                  key={u.id}
+                  className="transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                >
+                  <td className="td">
+                    <span className="flex items-center gap-2">
+                      <Avatar first={u.full_name.split(" ")[0]} last={u.full_name.split(" ")[1] ?? ""} size={24} />
+                      <span>{u.full_name || "—"}</span>
+                      {u.is_owner && (
+                        <span className="badge bg-primary-50 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
+                          owner
+                        </span>
+                      )}
+                      {!u.is_active && (
+                        <span className="badge bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                          inactive
+                        </span>
+                      )}
+                    </span>
                   </td>
-                  <td className="px-2 py-2 text-slate-500 dark:text-slate-400">{u.email}</td>
-                  <td className="px-2 py-2">{u.role ?? "—"}</td>
-                  <td className="px-2 py-2 text-slate-500 dark:text-slate-400">
+                  <td className="td text-slate-500 dark:text-slate-400">{u.email}</td>
+                  <td className="td">{u.role ?? "—"}</td>
+                  <td className="td text-slate-500 dark:text-slate-400">
                     {u.last_login_at ? formatDateTime(u.last_login_at) : "never"}
                   </td>
                 </tr>
               ))}
               {(t.users ?? []).length === 0 && (
                 <tr>
-                  <td colSpan={4} className="py-6 text-center text-sm text-slate-400">
+                  <td colSpan={4} className="py-10 text-center text-sm text-slate-400">
                     No users yet.
                   </td>
                 </tr>

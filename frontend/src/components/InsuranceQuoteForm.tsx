@@ -222,8 +222,8 @@ export function InsuranceQuoteForm({
       </section>
 
       <section>
-        <div className="mb-2 flex items-center justify-between">
-          <div>
+        <div className="mb-3 flex items-start justify-between gap-4">
+          <div className="min-w-0">
             <h3 className="font-semibold">Insurer options</h3>
             <p className="text-xs text-slate-400">
               Competing quotes for the same cover. The customer takes one, so the quotation
@@ -232,7 +232,7 @@ export function InsuranceQuoteForm({
           </div>
           <button
             type="button"
-            className="btn-secondary text-sm"
+            className="btn-secondary shrink-0 whitespace-nowrap text-sm"
             onClick={() => append({ ...emptyOption })}
           >
             <Plus size={15} /> Add option

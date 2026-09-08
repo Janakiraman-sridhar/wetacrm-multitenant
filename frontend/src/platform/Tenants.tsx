@@ -113,7 +113,7 @@ export default function Tenants() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <button className="btn-primary" onClick={() => setCreateOpen(true)}>
+          <button className="btn-primary shrink-0 whitespace-nowrap" onClick={() => setCreateOpen(true)}>
             <Plus size={16} /> New tenant
           </button>
         </div>
@@ -131,13 +131,13 @@ export default function Tenants() {
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-left dark:border-slate-800 dark:bg-slate-900/60">
-              <tr className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                <th className="px-4 py-3">Workspace</th>
-                <th className="px-4 py-3">Template</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Created</th>
-                <th className="px-4 py-3 text-right">Actions</th>
+            <thead>
+              <tr>
+                <th className="th">Workspace</th>
+                <th className="th">Template</th>
+                <th className="th">Status</th>
+                <th className="th">Created</th>
+                <th className="th !text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -153,7 +153,7 @@ export default function Tenants() {
                   className="cursor-pointer border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50 dark:border-slate-800/70 dark:hover:bg-slate-800/40"
                   onClick={() => navigate(`/platform/tenants/${tenant.id}`)}
                 >
-                  <td className="px-4 py-3">
+                  <td className="td">
                     <span className="flex items-center gap-2.5">
                       <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary-50 text-primary-600 dark:bg-primary-900/40 dark:text-primary-300">
                         {tenant.type === "individual" ? <UserIcon size={15} /> : <Building2 size={15} />}
@@ -164,14 +164,14 @@ export default function Tenants() {
                       </span>
                     </span>
                   </td>
-                  <td className="px-4 py-3">{templateName(tenant.template_key)}</td>
-                  <td className="px-4 py-3">
+                  <td className="td">{templateName(tenant.template_key)}</td>
+                  <td className="td">
                     <span className={clsx("badge", STATUS_STYLES[tenant.status] ?? STATUS_STYLES.provisioning)}>
                       {tenant.status}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{formatDate(tenant.created_at)}</td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="td text-slate-500 dark:text-slate-400">{formatDate(tenant.created_at)}</td>
+                  <td className="td text-right">
                     <Link
                       to={`/platform/tenants/${tenant.id}`}
                       className="btn-secondary !py-1.5"

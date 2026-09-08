@@ -277,6 +277,7 @@ function UsersTab() {
           </button>
         )}
       </div>
+      <div className="table-scroll overflow-x-auto">
       <table className="w-full">
         <thead>
           <tr>
@@ -334,6 +335,7 @@ function UsersTab() {
           ))}
         </tbody>
       </table>
+      </div>
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? "Edit user" : "Invite user"}>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

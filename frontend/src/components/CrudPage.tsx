@@ -641,10 +641,10 @@ export function CrudPage<T extends { id: string }>({
             />
           )}
           {viewsControl}
-          <div className="relative">
+          <div className="relative w-full min-w-0 sm:w-auto">
             <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
-              className="input w-56 !pl-8"
+              className="input w-full !pl-8 sm:w-56"
               placeholder={searchPlaceholder}
               value={search}
               onChange={(e) => {

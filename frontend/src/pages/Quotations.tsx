@@ -264,7 +264,7 @@ export default function Quotations() {
     <div className="flex h-full min-h-0 flex-col gap-4">
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">Quotations</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             className={clsx("btn-secondary", (showFilters || activeFilterCount > 0) && "!border-primary-400 !text-primary-700 dark:!border-primary-600 dark:!text-primary-300")}
             onClick={() => setShowFilters((s) => !s)}
@@ -284,10 +284,10 @@ export default function Quotations() {
             exportParams={{ filters: filtersParam }}
           />
           {viewsControl}
-          <div className="relative">
+          <div className="relative w-full min-w-0 sm:w-auto">
             <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
-              className="input w-56 !pl-8"
+              className="input w-full !pl-8 sm:w-56"
               placeholder="Search quotations…"
               value={search}
               onChange={(e) => {

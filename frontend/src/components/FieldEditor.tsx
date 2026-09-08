@@ -111,14 +111,20 @@ export function FieldEditor({ module, label }: { module: string; label: string }
     (!NEEDS_OPTIONS.has(form.field_type) || form.optionsText.trim().length > 0);
 
   const row = (field: SchemaField) => (
-    <div key={field.key} className="flex items-center gap-3 py-2.5">
+    <div
+      key={field.key}
+      className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5"
+    >
       <input
-        className="input !py-1.5 w-52 shrink-0"
+        className="input !py-1.5 w-full min-w-0 sm:w-52 sm:shrink-0"
         value={field.label}
         onChange={(e) => patchField.mutate({ key: field.key, patch: { label: e.target.value } })}
         aria-label={`Label for ${field.key}`}
       />
-      <code className="w-40 shrink-0 truncate text-xs text-slate-400" title={field.key}>
+      <code
+        className="min-w-0 flex-1 truncate text-xs text-slate-400 sm:w-40 sm:flex-none"
+        title={field.key}
+      >
         {field.is_custom ? `custom.${field.key}` : field.key}
       </code>
       <span className="badge shrink-0 bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">

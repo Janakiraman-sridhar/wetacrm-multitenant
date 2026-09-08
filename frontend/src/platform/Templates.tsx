@@ -139,7 +139,7 @@ export default function Templates() {
               ))}
             </dl>
 
-            <div className="mt-4 flex gap-2">
+            <div className="mt-4 flex flex-wrap gap-2">
               <button
                 className={template.is_system ? "btn-secondary flex-1" : "btn-primary flex-1"}
                 onClick={() => setEditing(template.key)}
@@ -151,10 +151,10 @@ export default function Templates() {
               >
                 <Pencil size={14} /> Customise
               </button>
-              <button className="btn-secondary" onClick={() => setInspecting(template.key)}>
+              <button className="btn-secondary shrink-0" onClick={() => setInspecting(template.key)}>
                 Inspect
               </button>
-              <button className="btn-secondary" onClick={() => openClone(template)} title="Clone to customise">
+              <button className="btn-secondary shrink-0" onClick={() => openClone(template)} title="Clone to customise">
                 <Copy size={14} /> Clone
               </button>
               {!template.is_system && (

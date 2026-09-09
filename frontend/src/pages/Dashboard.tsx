@@ -120,26 +120,11 @@ export default function Dashboard() {
     { name: "Lost", value: data.win_rate.lost },
   ];
 
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Good day, {user?.first_name}!</h1>
-          <p className="text-sm text-slate-400">
-            Showing {formatDate(start)} – {formatDate(end)} · click any KPI or chart to inspect and export its data.
-          </p>
-        </div>
-        <DateRangePicker
-          preset={preset}
-          start={start}
-          end={end}
-          onChange={(nextPreset, nextStart, nextEnd) => {
-            setPreset(nextPreset);
-            setRange({ start: nextStart, end: nextEnd });
-          }}
-        />
-      </div>
-
+  /**
+   * The deal-centric figures the product shipped with. Kept whole; what changes
+   * for an insurance workspace is where they sit, not what they say.
+   */
+  const dealKpis = (
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <KpiCard
           label="Revenue (won)"
@@ -190,7 +175,9 @@ export default function Dashboard() {
           onClick={() => open("meetings", "Meetings in period")}
         />
       </div>
+  );
 
+  const dealCharts = (
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <ChartCard title="Revenue Over Time" onViewData={() => open("revenue_series", "Revenue — won deals")}>
           <ResponsiveContainer width="100%" height={240}>
@@ -279,17 +266,64 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </ChartCard>
       </div>
+  );
 
-      {/* Insurance panels, shown only where the Policies module is switched on —
-          a general CRM tenant keeps the dashboard it had. */}
-      {hasPolicies && <InsuranceKpis />}
-      {hasPolicies && (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <RenewalPanel compact />
-          <BirthdayPanel compact />
+  const insuranceBook = (
+    <>
+      <InsuranceKpis />
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <RenewalPanel compact />
+        <BirthdayPanel compact />
+      </div>
+    </>
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold">Good day, {user?.first_name}!</h1>
+          <p className="text-sm text-slate-400">
+            Showing {formatDate(start)} – {formatDate(end)} · click any KPI or chart to inspect and export its data.
+          </p>
         </div>
+        <DateRangePicker
+          preset={preset}
+          start={start}
+          end={end}
+          onChange={(nextPreset, nextStart, nextEnd) => {
+            setPreset(nextPreset);
+            setRange({ start: nextStart, end: nextEnd });
+          }}
+        />
+      </div>
+
+      {/* An insurance workspace opens on its book.
+          Left in the shipped order these six deal KPIs read ₹0, 0, 0, 0, 0, 0 for an
+          agency that sells policies, and the figures they came for — premium, renewals
+          due, birthdays to wish — sat seven sections down the page. A general CRM keeps
+          exactly the dashboard it had. */}
+      {hasPolicies ? (
+        <>
+          {insuranceBook}
+
+          <div className="flex items-center gap-3 pt-2">
+            <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+              Pipeline and activity
+            </h2>
+            <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
+          </div>
+
+          {dealKpis}
+          {dealCharts}
+        </>
+      ) : (
+        <>
+          {dealKpis}
+          {dealCharts}
+          <BirthdayPanel compact />
+        </>
       )}
-      {!hasPolicies && <BirthdayPanel compact />}
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <ChartCard title="Upcoming Meetings" icon={CalendarClock} onViewData={() => open("upcoming_meetings", "Meetings in period")}>

@@ -47,7 +47,7 @@ cd backend && .venv/Scripts/python.exe -m pytest          # all
 `backend/tests/` holds the tenant-isolation (Phase 0), template/provisioning (Phase 1)
 custom-field (Phase 2), customer-PII (Phase 3), policy (Phase 4), poster/WhatsApp (Phase 5) and
 loans/reports/insurance-quotation (Phase 6) and hardening (Phase 7: auth/RBAC, billing and
-CSV I/O, signed downloads, purge, export, indexes, security review) and email-workflow suites — 547 tests. Install
+CSV I/O, signed downloads, purge, export, indexes, security review) and email-workflow suites — 557 tests. Install
 test deps with `pip install -r requirements-dev.txt`. There is no frontend test suite;
 `npm run build` (which runs `tsc -b`) is the only typecheck gate.
 
@@ -489,6 +489,34 @@ not. The table doubles as the answer to "did we email this customer?".
 Adding a trigger is a `TriggerDef` plus the `fire()` call at the moment it names —
 the alternative is a chain of `if setting_enabled(...)` at scattered call sites,
 which is where both original bugs came from.
+
+### One record's notes, files and history
+
+`components/RecordPanel.tsx` is the drawer behind the paperclip on a contact,
+policy or loan row. Notes, attachments and the activity timeline had all been
+written to the database since their modules were built and none of them had a
+screen — a customer accumulated dated notes nobody could read, and a policy could
+not carry the PDF it was issued as.
+
+- A drawer, not the edit modal: these are read far more often than they are
+  changed, and you should not enter edit mode to look at them.
+- The **Notes** tab appears only for contacts, because `customer_notes` is the only
+  dated-note table there is. Inventing one for other records would mean two things
+  called notes behaving differently.
+- **Files** pass `entity_type`/`entity_id` to `/documents` and open through
+  `/documents/{id}/link` — a signed URL, because a new tab cannot send a bearer
+  token. See below for why the signature is the credential.
+- **Settings → Audit log** finally reads `audit_logs`. Every mutating route has
+  written one since the audit helper landed and nothing ever read them; a workspace
+  had a complete record of every premium edited and every PAN revealed, and no way
+  to look at it. Read-only on purpose — a log a user can prune is not evidence.
+
+**The API serialises naive UTC** ("2026-09-09T15:28:24", no zone), and JavaScript
+reads a zone-less ISO string with a time in it as *local*. Every relative time in
+the app was out by the viewer's offset — in IST a note written seconds ago read
+"5h ago". `lib/format.ts` parses through one helper that appends `Z` when there is
+no zone; date-only values are already UTC and are left alone. Fix it there, not at
+each call site.
 
 ### Serving files: signed links, and not trusting the uploader
 

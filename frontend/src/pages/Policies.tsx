@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { History, RefreshCw, ShieldCheck } from "lucide-react";
+import { History, Paperclip, RefreshCw, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { z } from "zod";
 
 import { CrudPage, FieldDef } from "@/components/CrudPage";
 import { CustomerChip } from "@/components/CustomerChip";
 import { Modal } from "@/components/Modal";
+import { RecordPanel } from "@/components/RecordPanel";
 import { useToast } from "@/context/ToastContext";
 import { api, errorMessage } from "@/lib/api";
 import { FilterFieldDef } from "@/lib/filters";
@@ -215,6 +216,8 @@ export default function Policies() {
   const users = useUserOptions();
   const { show } = useValuePrivacy();
   const [historyFor, setHistoryFor] = useState<string | null>(null);
+  /** The policy whose files and history are open, if any. */
+  const [panel, setPanel] = useState<{ id: string; title: string; subtitle?: string } | null>(null);
   const [renewing, setRenewing] = useState<Policy | null>(null);
 
   const filterFields: FilterFieldDef[] = [
@@ -383,6 +386,19 @@ export default function Policies() {
           <>
             <button
               className="btn-ghost !p-1.5"
+              title="Files and history — the policy copy, RC, KYC"
+              onClick={() =>
+                setPanel({
+                  id: policy.id,
+                  title: policy.policy_number,
+                  subtitle: `${policy.customer?.full_name ?? ""} · ${policy.insurer?.name ?? ""}`,
+                })
+              }
+            >
+              <Paperclip size={14} />
+            </button>
+            <button
+              className="btn-ghost !p-1.5"
               title="Renewal history"
               onClick={() => setHistoryFor(policy.id)}
             >
@@ -406,6 +422,15 @@ export default function Policies() {
         }
       />
       <HistoryModal policyId={historyFor} onClose={() => setHistoryFor(null)} />
+
+      <RecordPanel
+        open={!!panel}
+        onClose={() => setPanel(null)}
+        entityType="policy"
+        entityId={panel?.id ?? ""}
+        title={panel?.title ?? ""}
+        subtitle={panel?.subtitle}
+      />
       <RenewModal policy={renewing} onClose={() => setRenewing(null)} />
     </>
   );

@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { LayoutGrid, List } from "lucide-react";
+import { LayoutGrid, List, Paperclip } from "lucide-react";
 import { useState } from "react";
 import { z } from "zod";
 
 import { CrudPage, FieldDef } from "@/components/CrudPage";
 import { CustomerChip } from "@/components/CustomerChip";
+import { RecordPanel } from "@/components/RecordPanel";
 import { Avatar, PageSpinner } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
@@ -233,6 +234,8 @@ export default function Loans() {
   const users = useUserOptions();
   const { show } = useValuePrivacy();
   const [view, setView] = useState<"list" | "board">("list");
+  /** The record whose notes, files and history are open, if any. */
+  const [panel, setPanel] = useState<{ id: string; title: string; subtitle?: string } | null>(null);
 
   const { data: stats } = useQuery({
     queryKey: ["loans", "stats"],
@@ -390,6 +393,7 @@ export default function Loans() {
   }
 
   return (
+    <>
     <CrudPage<Loan>
       title="Loans"
       singular="Loan"
@@ -413,6 +417,31 @@ export default function Loans() {
       columns={columns}
       allColumns={[...columns, ...extraColumns]}
       toolbar={toolbar}
+      rowActions={(row) => (
+        <button
+          className="btn-ghost !p-1.5"
+          title="Files and history — sanction letter, KYC"
+          onClick={() =>
+            setPanel({
+              id: row.id,
+              title: `${row.loan_type} · ${row.customer?.full_name ?? ""}`,
+              subtitle: row.status,
+            })
+          }
+        >
+          <Paperclip size={15} />
+        </button>
+      )}
     />
+
+    <RecordPanel
+      open={!!panel}
+      onClose={() => setPanel(null)}
+      entityType="loan"
+      entityId={panel?.id ?? ""}
+      title={panel?.title ?? ""}
+      subtitle={panel?.subtitle}
+    />
+    </>
   );
 }

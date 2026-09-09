@@ -7,15 +7,31 @@ export function formatMoney(value: number | null | undefined, currency = "INR"):
   }
 }
 
+/**
+ * Parse a timestamp from the API.
+ *
+ * The server stores and serialises naive UTC — "2026-09-09T15:28:24.400156", with
+ * no zone on the end. JavaScript reads an ISO string that has a time but no zone as
+ * **local** time, so in IST every timestamp in the app was five and a half hours
+ * out: a note written seconds ago read "5h ago", and an activity timeline claimed
+ * this morning's work happened before dawn.
+ *
+ * Date-only values ("2026-09-09") are already parsed as UTC and are left alone.
+ */
+function parse(value: string): Date {
+  const naiveDateTime = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(value) && !/(Z|[+-]\d{2}:?\d{2})$/.test(value);
+  return new Date(naiveDateTime ? `${value.replace(" ", "T")}Z` : value);
+}
+
 export function formatDate(value?: string | null): string {
   if (!value) return "—";
-  const d = new Date(value);
+  const d = parse(value);
   return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
 
 export function formatDateTime(value?: string | null): string {
   if (!value) return "—";
-  const d = new Date(value);
+  const d = parse(value);
   return d.toLocaleString(undefined, {
     day: "numeric",
     month: "short",
@@ -25,7 +41,7 @@ export function formatDateTime(value?: string | null): string {
 }
 
 export function timeAgo(value: string): string {
-  const seconds = Math.floor((Date.now() - new Date(value).getTime()) / 1000);
+  const seconds = Math.floor((Date.now() - parse(value).getTime()) / 1000);
   if (seconds < 60) return "just now";
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;

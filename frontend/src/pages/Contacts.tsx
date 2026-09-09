@@ -1,10 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { Building2, Globe, IdCard, Mail, MapPin, Phone, UserRound } from "lucide-react";
+import { useState } from "react";
+import { Building2, Globe, IdCard, Mail, MapPin, Paperclip, Phone, UserRound } from "lucide-react";
 import { z } from "zod";
 
 import { CrudPage, FieldDef } from "@/components/CrudPage";
 import { CustomerChip } from "@/components/CustomerChip";
 import { NomineeFields } from "@/components/NomineeFields";
+import { RecordPanel } from "@/components/RecordPanel";
 import { Avatar } from "@/components/ui";
 import { api } from "@/lib/api";
 import { FilterFieldDef } from "@/lib/filters";
@@ -283,6 +285,8 @@ const contactExtraColumns = [
 ];
 
 export default function Contacts() {
+  /** The record whose notes, files and history are open, if any. */
+  const [panel, setPanel] = useState<{ id: string; title: string; subtitle?: string } | null>(null);
   const users = useUserOptions();
   const companies = useCompanyOptions();
   const tags = useTagOptions();
@@ -370,6 +374,7 @@ export default function Contacts() {
   ];
 
   return (
+    <>
     <CrudPage<Contact>
       title="Contacts"
       endpoint="/contacts"
@@ -425,6 +430,31 @@ export default function Contacts() {
       searchPlaceholder="Search contacts…"
       columns={contactDefaultColumns}
       allColumns={[...contactDefaultColumns, ...contactExtraColumns]}
+      rowActions={(row) => (
+        <button
+          className="btn-ghost !p-1.5"
+          title="Notes, files and history"
+          onClick={() =>
+            setPanel({
+              id: row.id,
+              title: [row.first_name, row.last_name].filter(Boolean).join(" "),
+              subtitle: row.mobile ?? row.emails?.[0] ?? undefined,
+            })
+          }
+        >
+          <Paperclip size={15} />
+        </button>
+      )}
     />
+
+    <RecordPanel
+      open={!!panel}
+      onClose={() => setPanel(null)}
+      entityType="contact"
+      entityId={panel?.id ?? ""}
+      title={panel?.title ?? ""}
+      subtitle={panel?.subtitle}
+    />
+    </>
   );
 }

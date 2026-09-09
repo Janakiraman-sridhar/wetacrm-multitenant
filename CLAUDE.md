@@ -524,10 +524,18 @@ not carry the PDF it was issued as.
 - **Files** pass `entity_type`/`entity_id` to `/documents` and open through
   `/documents/{id}/link` — a signed URL, because a new tab cannot send a bearer
   token. See below for why the signature is the credential.
-- **Settings → Audit log** finally reads `audit_logs`. Every mutating route has
-  written one since the audit helper landed and nothing ever read them; a workspace
-  had a complete record of every premium edited and every PAN revealed, and no way
-  to look at it. Read-only on purpose — a log a user can prune is not evidence.
+- The **Changes** tab is that record's audit trail: field-level, old value to new,
+  with the actor and their IP. Distinct from History, which is the narrative — "Note
+  added", "Policy issued". A `reveal_pii` entry lands in the same table against the
+  same record, so "who looked at this customer's PAN" is answered on the customer
+  rather than in a report nobody opens; that is the reason auditing reveals exists.
+  The tab is gated on `settings:read` because the endpoint is, so it is never a door
+  onto a refusal.
+- **Settings → Audit log** is the same data across the whole workspace, for the
+  admin question rather than the customer one. Both render through
+  `components/AuditEntry.tsx` so the two cannot drift.
+- Either way it is read-only, and no route deletes an entry — a log a user can prune
+  is not evidence of anything.
 
 **The API serialises naive UTC** ("2026-09-09T15:28:24", no zone), and JavaScript
 reads a zone-less ISO string with a time in it as *local*. Every relative time in

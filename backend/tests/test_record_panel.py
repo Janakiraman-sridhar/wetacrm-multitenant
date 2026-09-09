@@ -188,6 +188,43 @@ def test_an_edit_is_recorded_with_its_before_and_after(client, alpha):
         client.delete(f"{API}/contacts/{customer['id']}", headers=alpha.auth())
 
 
+def test_viewing_an_identity_number_shows_up_on_that_customer(client, alpha):
+    """The reveal audit is the reason storing a PAN is defensible at all.
+
+    It lands in the same table against the same record as an ordinary edit, which
+    is what lets one panel on the customer answer both "what changed" and "who
+    looked" — the question a tenant admin actually has.
+    """
+    customer = client.post(
+        f"{API}/contacts",
+        json={"first_name": "Revealed", "last_name": "Subject", "pan": "ABCDE1234F"},
+        headers=alpha.auth(),
+    ).json()
+    try:
+        shown = client.post(f"{API}/contacts/{customer['id']}/reveal",
+                            json={"field": "pan"}, headers=alpha.auth())
+        assert shown.status_code == 200, shown.text
+
+        log = client.get(f"{API}/audit-logs",
+                         params={"entity_type": "contact", "entity_id": customer["id"]},
+                         headers=alpha.auth()).json()
+        reveals = [r for r in log["items"] if r["action"] == "reveal_pii"]
+        assert reveals, [r["action"] for r in log["items"]]
+        assert reveals[0]["changes"]["field"] == "pan"
+        assert reveals[0]["user"] is not None, "a reveal nobody can be pinned to"
+
+        # And it is scoped to this customer, not the whole workspace.
+        other = client.post(f"{API}/contacts", json={"first_name": "Untouched"},
+                            headers=alpha.auth()).json()
+        theirs = client.get(f"{API}/audit-logs",
+                            params={"entity_type": "contact", "entity_id": other["id"]},
+                            headers=alpha.auth()).json()
+        assert not [r for r in theirs["items"] if r["action"] == "reveal_pii"]
+        client.delete(f"{API}/contacts/{other['id']}", headers=alpha.auth())
+    finally:
+        client.delete(f"{API}/contacts/{customer['id']}", headers=alpha.auth())
+
+
 def test_the_audit_log_does_not_cross_tenants(client, alpha, bravo):
     customer = _customer(client, alpha, "Ours")
     try:

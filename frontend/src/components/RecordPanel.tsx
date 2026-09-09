@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
-  Clock, Download, FileText, Paperclip, Pin, PinOff, Plus, StickyNote, Trash2, Upload, X,
+  Clock, Download, FileText, Paperclip, Pin, PinOff, Plus, ShieldCheck, StickyNote, Trash2,
+  Upload, X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { ActionBadge, AuditRow, Change, actorName } from "@/components/AuditEntry";
 import { Avatar } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
@@ -72,10 +74,12 @@ export function RecordPanel({
   subtitle?: string;
 }) {
   const { hasPerm } = useAuth();
+  // `/audit-logs` is gated on settings:read; asking without it would only 403.
+  const canAudit = hasPerm("settings:read");
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const fileInput = useRef<HTMLInputElement>(null);
-  const [tab, setTab] = useState<"notes" | "files" | "activity">("notes");
+  const [tab, setTab] = useState<"notes" | "files" | "activity" | "changes">("notes");
   const [draft, setDraft] = useState("");
   const [dragging, setDragging] = useState(false);
 
@@ -105,6 +109,24 @@ export function RecordPanel({
         params: { entity_type: entityType, entity_id: entityId, page_size: 100 },
       })).data.items,
     enabled: open,
+  });
+
+  /**
+   * What was changed on this record, and who looked at its identity numbers.
+   *
+   * Distinct from History above: that is the narrative an agent writes and the app
+   * records — "Policy issued", "Note added". This is the field-level trail, old
+   * value to new, with the actor and their IP. A reveal of a full PAN or Aadhaar
+   * lands in the same table against the same record, so it shows here too, which is
+   * the whole point of auditing reveals in the first place.
+   */
+  const changes = useQuery({
+    queryKey: ["record-audit", entityType, entityId],
+    queryFn: async () =>
+      (await api.get<{ items: AuditRow[] }>("/audit-logs", {
+        params: { entity_type: entityType, entity_id: entityId, page_size: 50 },
+      })).data.items,
+    enabled: open && canAudit,
   });
 
   const activity = useQuery({
@@ -191,6 +213,11 @@ export function RecordPanel({
     ...(hasNotes ? [{ id: "notes" as const, label: "Notes", icon: StickyNote, count: notes.data?.length }] : []),
     { id: "files" as const, label: "Files", icon: Paperclip, count: docs.data?.length },
     { id: "activity" as const, label: "History", icon: Clock, count: activity.data?.length },
+    // Gated on the permission the endpoint itself requires, so the tab is never a
+    // door that opens onto a refusal.
+    ...(canAudit
+      ? [{ id: "changes" as const, label: "Changes", icon: ShieldCheck, count: changes.data?.length }]
+      : []),
   ];
 
   return (
@@ -373,6 +400,37 @@ export function RecordPanel({
                 )}
               </ul>
             </div>
+          )}
+
+          {tab === "changes" && (
+            <ol className="space-y-2">
+              {(changes.data ?? []).map((row) => (
+                <li
+                  key={row.id}
+                  className="rounded-lg border border-slate-200 p-2.5 dark:border-slate-700"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <ActionBadge action={row.action} />
+                    <span className="min-w-0 flex-1 truncate text-xs text-slate-400">
+                      {actorName(row.user)} · {formatDateTime(row.created_at)}
+                      {row.ip_address ? ` · ${row.ip_address}` : ""}
+                    </span>
+                  </div>
+                  {Object.keys(row.changes ?? {}).length > 0 && (
+                    <ul className="mt-1.5 text-xs">
+                      {Object.entries(row.changes).map(([field, value]) => (
+                        <Change key={field} field={field} value={value} />
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              ))}
+              {changes.isSuccess && (changes.data ?? []).length === 0 && (
+                <li className="py-8 text-center text-sm text-slate-400">
+                  Nothing has been changed on this record since it was created.
+                </li>
+              )}
+            </ol>
           )}
 
           {tab === "activity" && (

@@ -11,7 +11,7 @@ import { Avatar } from "@/components/ui";
 import { useToast } from "@/context/ToastContext";
 import { api, errorMessage } from "@/lib/api";
 import { formatDate, formatDateTime } from "@/lib/format";
-import { moduleIcon } from "@/lib/modules";
+import { ModuleBoard } from "@/platform/ModuleBoard";
 import type { CrmTemplate, TenantDetail as TenantDetailType, TenantModule } from "@/types";
 
 /** Labels for the per-module row counts the API reports. */
@@ -141,7 +141,7 @@ export default function TenantDetail() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl space-y-5">
+    <div className="mx-auto max-w-6xl space-y-5">
       <div>
         <Link to="/platform" className="mb-2 inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-primary-600">
           <ArrowLeft size={15} /> All tenants
@@ -290,56 +290,47 @@ export default function TenantDetail() {
             <h2 className="font-semibold">Modules</h2>
             <p className="text-sm text-slate-500 dark:text-slate-400">
               What this client sees in their sidebar, and what each module is called for them.
-              {" "}
-              <span className="text-slate-400">{enabledCount} of {draft.length} enabled.</span>
+              Switching one off refuses it at the API as well, so it is gone rather than hidden.
             </p>
           </div>
           <button
-            className="btn-primary"
+            className="btn-primary ml-auto shrink-0"
             disabled={!dirty || saveModules.isPending}
             onClick={() => saveModules.mutate()}
           >
-            <Save size={15} /> {saveModules.isPending ? "Saving…" : "Save changes"}
+            <Save size={15} /> {saveModules.isPending ? "Saving…" : dirty ? "Save changes" : "Saved"}
           </button>
         </div>
 
-        <div className="divide-y divide-slate-100 dark:divide-slate-800">
-          {draft.map((m) => {
-            const Icon = moduleIcon(m.icon);
-            return (
-              <div key={m.module_key} className="flex items-center gap-3 py-2.5">
-                <GripVertical size={15} className="shrink-0 text-slate-300" />
-                <Icon size={16} className="shrink-0 text-primary-600 dark:text-primary-400" />
-                <span className="w-32 shrink-0 truncate text-xs text-slate-400" title={m.module_key}>
-                  {m.module_key}
-                </span>
-                <input
-                  className="input !py-1.5 flex-1"
-                  value={m.label}
-                  onChange={(e) => patchDraft(m.module_key, { label: e.target.value })}
-                  aria-label={`Label for ${m.module_key}`}
-                />
-                <label
-                  className={clsx(
-                    "flex shrink-0 items-center gap-2 text-sm",
-                    m.locked ? "cursor-not-allowed text-slate-400" : "cursor-pointer"
-                  )}
-                  title={m.locked ? "This module cannot be switched off" : undefined}
-                >
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-primary-600"
-                    checked={m.enabled}
-                    disabled={m.locked}
-                    onChange={(e) => patchDraft(m.module_key, { enabled: e.target.checked })}
-                  />
-                  {m.locked ? <Lock size={13} /> : "On"}
-                </label>
-              </div>
+        {/* The same board the template editor uses. A workspace's modules and a
+            template's modules are the same decision at two moments, so they should
+            not be two different screens to learn. */}
+        <ModuleBoard
+          catalog={draft.map((m) => ({
+            key: m.module_key,
+            label: m.label,
+            order: m.order,
+            icon: m.icon,
+            locked: m.locked,
+          }))}
+          value={draft.map((m) => ({
+            key: m.module_key,
+            enabled: m.enabled,
+            label: m.label,
+            order: m.order,
+          }))}
+          onChange={(next) => {
+            const byKey = new Map(draft.map((m) => [m.module_key, m]));
+            setDraft(
+              next.map((m, index) => ({
+                ...byKey.get(m.key)!,
+                label: m.label ?? byKey.get(m.key)!.label,
+                enabled: m.enabled,
+                order: index + 1,
+              }))
             );
-          })}
-          {draft.length === 0 && <p className="py-6 text-center text-sm text-slate-400">No modules configured.</p>}
-        </div>
+          }}
+        />
       </section>
 
       <section className="card border-red-200 p-5 dark:border-red-900/60">

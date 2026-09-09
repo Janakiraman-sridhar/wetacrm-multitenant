@@ -159,6 +159,13 @@ stages, lead sources, tags, settings and email templates.
 - A template that names **any** modules is treated as naming **all** of them: anything
   it leaves out is disabled. Listing seven modules and silently getting the other ten
   is not what anyone means. A template with no module list gets everything.
+  **The console must read the config the same way `_apply_modules` does** —
+  `mergeWithCatalog()` in `platform/ModuleBoard.tsx` is the one place that does it, and
+  both the template editor and the tenant page go through it. The editor used to
+  default an unnamed module to *on*, which had two live consequences: it showed
+  sixteen modules included for a template that grants five, and pressing Save wrote
+  that back, silently switching on eleven modules the template deliberately withheld.
+  If the backend rule ever changes, change it here too.
 - Custom templates are editable (`PATCH /platform/templates/{key}`); system ones are
   refused, because they are refreshed from the bundled JSON and an edit would be
   overwritten. The edited config is re-validated before storing.
@@ -172,6 +179,24 @@ stages, lead sources, tags, settings and email templates.
   it, and `locked` modules (dashboard, settings) stay on whatever a template says.
 
 `app/database/seed.py` no longer exists — provisioning replaced it.
+
+### The Super Admin console
+
+Two screens decide the same thing at two moments — what a workspace can open — so
+they share `platform/ModuleBoard.tsx` rather than being two lists to learn. The board
+*is* the client's sidebar: the included modules in order, under the names that client
+will read, draggable; everything switched off sits beside it under "Not included".
+Counts and checkbox columns cannot show what a workspace will actually feel like.
+
+`platform/TemplateEditor.tsx` is a **page** (`/platform/templates/:key`), not a modal:
+it configures eighteen modules, a pipeline and a source list, and a scrolling dialog
+gave no sense of scale, could not be linked to, and hid the save button as soon as you
+scrolled. It holds the last-saved JSON and asks before discarding. A system template
+opens read-only with the clone offered, because editing one would be overwritten by
+the next `sync_system_templates()`.
+
+A pipeline stage's outcome is **one** three-way choice (open / won / lost), not two
+checkboxes that can both be clear or silently clear each other.
 
 ### Custom fields — how a client gets their own fields
 

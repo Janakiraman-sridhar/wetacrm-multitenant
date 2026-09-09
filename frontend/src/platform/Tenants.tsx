@@ -1,6 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { Building2, ChevronRight, Plus, Search, User as UserIcon } from "lucide-react";
+import {
+  Building2, ChevronRight, CircleCheck, PauseCircle, Plus, Search, User as UserIcon, Users,
+  type LucideIcon,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -20,11 +23,41 @@ const STATUS_STYLES: Record<string, string> = {
   deleted: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
 };
 
-function StatCard({ label, value }: { label: string; value: number | string }) {
+/**
+ * One figure about the platform.
+ *
+ * `alert` is the only thing that gets colour, and only when the number is non-zero:
+ * "Suspended 0" painted red reads as a problem when it is the opposite, and once
+ * every tile is coloured none of them mean anything.
+ */
+function StatCard({
+  label, value, icon: Icon, alert = false,
+}: {
+  label: string;
+  value: number | string;
+  icon: LucideIcon;
+  alert?: boolean;
+}) {
+  const flagged = alert && Number(value) > 0;
   return (
-    <div className="card p-4">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</p>
-      <p className="mt-1 text-2xl font-semibold">{value}</p>
+    <div className="card flex items-start justify-between gap-2 p-4">
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          {label}
+        </p>
+        <p
+          className={clsx(
+            "mt-1 text-2xl font-semibold tabular-nums",
+            flagged ? "text-amber-600 dark:text-amber-400" : "text-slate-900 dark:text-slate-100"
+          )}
+        >
+          {value}
+        </p>
+      </div>
+      <Icon
+        size={15}
+        className={clsx("mt-0.5 shrink-0", flagged ? "text-amber-500" : "text-slate-400 dark:text-slate-500")}
+      />
     </div>
   );
 }
@@ -121,10 +154,10 @@ export default function Tenants() {
 
       {stats.data && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatCard label="Tenants" value={stats.data.tenants_total} />
-          <StatCard label="Active" value={stats.data.tenants_active} />
-          <StatCard label="Suspended" value={stats.data.tenants_suspended} />
-          <StatCard label="Users" value={stats.data.users_total} />
+          <StatCard label="Workspaces" value={stats.data.tenants_total} icon={Building2} />
+          <StatCard label="Active" value={stats.data.tenants_active} icon={CircleCheck} />
+          <StatCard label="Suspended" value={stats.data.tenants_suspended} icon={PauseCircle} alert />
+          <StatCard label="People" value={stats.data.users_total} icon={Users} />
         </div>
       )}
 

@@ -27,6 +27,7 @@ import Tasks from "@/pages/Tasks";
 import { PlatformLayout } from "@/platform/PlatformLayout";
 import TenantDetail from "@/platform/TenantDetail";
 import Tenants from "@/platform/Tenants";
+import TemplateEditor from "@/platform/TemplateEditor";
 import Templates from "@/platform/Templates";
 
 function Protected({ children }: { children: React.ReactNode }) {
@@ -76,6 +77,7 @@ export default function App() {
         <Route index element={<Tenants />} />
         <Route path="tenants/:tenantId" element={<TenantDetail />} />
         <Route path="templates" element={<Templates />} />
+        <Route path="templates/:templateKey" element={<TemplateEditor />} />
       </Route>
 
       <Route

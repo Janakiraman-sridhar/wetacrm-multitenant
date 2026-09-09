@@ -47,7 +47,7 @@ cd backend && .venv/Scripts/python.exe -m pytest          # all
 `backend/tests/` holds the tenant-isolation (Phase 0), template/provisioning (Phase 1)
 custom-field (Phase 2), customer-PII (Phase 3), policy (Phase 4), poster/WhatsApp (Phase 5) and
 loans/reports/insurance-quotation (Phase 6) and hardening (Phase 7: auth/RBAC, billing and
-CSV I/O, signed downloads, purge, export, indexes, security review) and email-workflow suites — 516 tests. Install
+CSV I/O, signed downloads, purge, export, indexes, security review) and email-workflow suites — 522 tests. Install
 test deps with `pip install -r requirements-dev.txt`. There is no frontend test suite;
 `npm run build` (which runs `tsc -b`) is the only typecheck gate.
 
@@ -330,7 +330,18 @@ schema fields are `None`-defaulted rather than `0` — otherwise "not supplied" 
 
 `masters` holds a tenant's insurers, banks and branches as rows, because policies point
 at them; deleting one that is in use deactivates it so historical policies keep the
-insurer they were actually written with.
+insurer they were actually written with. A workspace maintains these from
+**Settings → Reference lists**; before that existed they were seeded once at
+provisioning and the only way to add one was the API, so a dropdown went stale the
+first time the market moved.
+
+**`insurer_id` and `broker_id` are two different companies on the same policy.** One
+underwrites the risk; the other is the intermediary the business was placed through
+and carries the agency code the commission is paid against. An agency reconciles by
+each separately, which is why they are not one field. `broker_id` is labelled
+**"Insurance company"**, and that label lives in `schema_registry._LABEL_OVERRIDES`
+rather than in the page — a page-level label is overridden by the served schema, so
+the form would say one thing and the column picker another.
 
 ### Quotations come in two shapes
 
@@ -395,6 +406,20 @@ format would be worse than storing it imperfectly.
 
 Birthdays query an indexed `birthday_key` (MMDD) rather than a date function over every
 row, so "whose birthday is this week" stays a range scan.
+
+**Nominees are captured on the customer form** (`components/NomineeFields.tsx`). The
+API had accepted them since the module was built and nothing ever asked, so every
+customer had none. Two rules are the insurer's and are enforced server-side — shares
+total 100, and a nominee under 18 needs an appointee — and the form mirrors both as
+they are typed, because being told which of four rows is wrong beats being told the
+set is. Adding a row takes the unallocated share, or splits evenly when there is
+none: appending a 0% nominee looks reasonable, totals 100 with the others, and is
+then refused by the API, which requires every share to be at least 1.
+
+`FieldDef.render` on `CrudPage` is the escape hatch a repeating sub-record like this
+needs. It is handed the form's `control` so it registers with react-hook-form like
+any other field — validation, dirty state and reset keep working rather than needing
+a second state tree beside them.
 
 ### The sidebar is data, not code
 

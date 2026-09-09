@@ -176,6 +176,7 @@ FILTERS: dict[str, dict[str, FF]] = {
         "product_line": FF(Policy.product_line, "select"),
         "status": FF(Policy.status, "select"),
         "insurer_id": FF(Policy.insurer_id, "select"),
+        "broker_id": FF(Policy.broker_id, "select"),
         "bank_id": FF(Policy.bank_id, "select"),
         "sourcing_channel": FF(Policy.sourcing_channel, "select"),
         "owner_id": FF(Policy.owner_id, "select"),

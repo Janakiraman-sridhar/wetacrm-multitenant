@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { CrudPage, FieldDef } from "@/components/CrudPage";
 import { CustomerChip } from "@/components/CustomerChip";
+import { NomineeFields } from "@/components/NomineeFields";
 import { Avatar } from "@/components/ui";
 import { api } from "@/lib/api";
 import { FilterFieldDef } from "@/lib/filters";
@@ -115,7 +116,51 @@ const schema = z.object({
   referred_by_type: optStr,
   referred_by_name: optStr,
   products_of_interest: z.array(z.string()).default([]),
-});
+
+  nominees: z
+    .array(
+      z.object({
+        name: z.string(),
+        relation: optStr,
+        age: optNum,
+        share_percent: optNum,
+        appointee_name: optStr,
+        appointee_relation: optStr,
+      })
+    )
+    .default([]),
+})
+  // The insurer's two rules, checked here so the agent is told which row is wrong
+  // rather than being handed a refusal about the set on save. The API enforces both
+  // regardless — this is a courtesy, not the guard.
+  .superRefine((values, ctx) => {
+    const rows = (values.nominees ?? []).filter((n) => (n.name ?? "").trim());
+    if (!rows.length) return;
+    const total = rows.reduce((sum, n) => sum + Number(n.share_percent || 0), 0);
+    if (total !== 100) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["nominees"],
+        message: `Nominee shares total ${total}% — they must add up to 100.`,
+      });
+    }
+    rows.forEach((n) => {
+      if (Number(n.share_percent || 0) < 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["nominees"],
+          message: `${n.name || "That nominee"} has no share — give them at least 1%, or remove them.`,
+        });
+      }
+      if (n.age != null && Number(n.age) < 18 && !(n.appointee_name ?? "").trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["nominees"],
+          message: `${n.name || "That nominee"} is under 18 and needs an appointee.`,
+        });
+      }
+    });
+  });
 
 const defaults = {
   first_name: "", last_name: "", position: "", company_id: "", email_primary: "",
@@ -125,6 +170,7 @@ const defaults = {
   mobile: "", alt_mobile: "", alt_email: "", address_line: "", pincode: "", city: "", state: "",
   pan: "", aadhaar: "", stage: "", referred_by_type: "", referred_by_name: "",
   products_of_interest: [] as string[],
+  nominees: [] as any[],
 };
 
 const GENDERS = [
@@ -165,6 +211,15 @@ function toApi(values: any) {
   const { email_primary, email_secondary, phone_primary, phone_secondary, linkedin, twitter, ...rest } = values;
   return {
     ...rest,
+    // A row someone started and abandoned would fail the share check and block the
+    // save, so an unnamed nominee is not a nominee.
+    nominees: (rest.nominees ?? [])
+      .filter((n: any) => (n.name ?? "").trim())
+      .map((n: any) => ({
+        ...n,
+        age: n.age === "" || n.age == null ? null : Number(n.age),
+        share_percent: Number(n.share_percent || 0),
+      })),
     emails: [email_primary, email_secondary].filter(Boolean),
     phones: [phone_primary, phone_secondary].filter(Boolean),
     social_links: {
@@ -302,6 +357,14 @@ export default function Contacts() {
     { name: "state", label: "State", section: "Address" },
 
     // --- referral -----------------------------------------------------------
+    {
+      name: "nominees",
+      label: "Nominees",
+      section: "Nominees",
+      colSpan: 2,
+      render: ({ control, name }) => <NomineeFields control={control} name={name} />,
+    },
+
     { name: "referred_by_type", label: "Referred by", type: "select", options: REFERRAL_TYPES, section: "Referral" },
     { name: "referred_by_name", label: "Referrer name", section: "Referral" },
   ];
@@ -343,6 +406,14 @@ export default function Contacts() {
         city: c.city ?? "",
         state: c.state ?? "",
         stage: c.stage ?? "",
+        nominees: (c.nominees ?? []).map((n) => ({
+          name: n.name,
+          relation: n.relation ?? "",
+          age: n.age ?? "",
+          share_percent: n.share_percent ?? 100,
+          appointee_name: n.appointee_name ?? "",
+          appointee_relation: n.appointee_relation ?? "",
+        })),
         referred_by_type: c.referred_by_type ?? "",
         referred_by_name: c.referred_by_name ?? "",
         products_of_interest: c.products_of_interest ?? [],

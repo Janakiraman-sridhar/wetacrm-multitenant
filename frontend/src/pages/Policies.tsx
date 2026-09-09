@@ -58,6 +58,7 @@ const schema = z.object({
   plan_name: optStr,
   customer_id: reqStr("Choose a customer"),
   insurer_id: optStr,
+  broker_id: optStr,
   bank_id: optStr,
   branch: optStr,
   sourcing_channel: optStr,
@@ -79,7 +80,7 @@ const schema = z.object({
 
 const defaults = {
   policy_number: "", product_line: "motor", plan_name: "", customer_id: "",
-  insurer_id: "", bank_id: "", branch: "", sourcing_channel: "direct", owner_id: "",
+  insurer_id: "", broker_id: "", bank_id: "", branch: "", sourcing_channel: "direct", owner_id: "",
   issue_date: "", start_date: "", expiry_date: "",
   premium_net: "", premium_gst: "", premium_gross: "", sum_insured: "",
   payment_mode: "", commission_percent: "", commission_amount: "",
@@ -208,6 +209,7 @@ function RenewModal({ policy, onClose }: { policy: Policy | null; onClose: () =>
 
 export default function Policies() {
   const insurers = useMasters("insurer");
+  const brokers = useMasters("broker");
   const banks = useMasters("bank");
   const customers = useContactOptions();
   const users = useUserOptions();
@@ -222,6 +224,7 @@ export default function Policies() {
       options: ["active", "expiring", "lapsed", "renewed", "draft", "cancelled"].map((v) => ({ value: v, label: v })),
     },
     { key: "insurer_id", label: "Insurer", type: "select", options: insurers },
+    { key: "broker_id", label: "Insurance company", type: "select", options: brokers },
     { key: "bank_id", label: "Bank", type: "select", options: banks },
     { key: "sourcing_channel", label: "Sourced via", type: "select", options: CHANNELS },
     { key: "owner_id", label: "Agent", type: "select", options: users },
@@ -236,6 +239,11 @@ export default function Policies() {
     { name: "product_line", label: "Product line", type: "select", options: PRODUCT_LINES, section: "Policy" },
     { name: "customer_id", label: "Customer", type: "select", options: customers, section: "Policy" },
     { name: "insurer_id", label: "Insurer", type: "select", options: insurers, section: "Policy" },
+    {
+      name: "broker_id", label: "Insurance company", type: "select", options: brokers,
+      section: "Policy",
+      placeholder: "Placed through…",
+    },
     { name: "plan_name", label: "Plan", section: "Policy" },
     { name: "owner_id", label: "Agent", type: "select", options: users, section: "Policy" },
 
@@ -290,6 +298,7 @@ export default function Policies() {
         ) : "—",
     },
     { key: "insurer_id", header: "Insurer", render: (p: Policy) => p.insurer?.name ?? "—" },
+    { key: "broker_id", header: "Insurance company", render: (p: Policy) => p.broker?.name ?? "—" },
     {
       key: "expiry_date", header: "Expiry", sortable: true,
       render: (p: Policy) => (
@@ -354,6 +363,7 @@ export default function Policies() {
         toForm={(p) => ({
           ...p,
           insurer_id: p.insurer_id ?? "",
+          broker_id: p.broker_id ?? "",
           bank_id: p.bank_id ?? "",
           owner_id: p.owner_id ?? "",
           plan_name: p.plan_name ?? "",

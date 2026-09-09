@@ -13,9 +13,10 @@ import { useToast } from "@/context/ToastContext";
 import { API_URL, api, errorMessage, tokenStore } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { EmailWorkflow } from "@/components/EmailWorkflow";
+import { MastersTab } from "@/components/MastersTab";
 import type { AppSetting, DealStage, EmailTemplate, Page, Role, Tag, User } from "@/types";
 
-const TABS = ["Company", "Users", "Roles", "Fields", "Pipeline", "Tags", "Documents", "Email Templates", "System"] as const;
+const TABS = ["Company", "Users", "Roles", "Fields", "Pipeline", "Reference lists", "Tags", "Documents", "Email Templates", "System"] as const;
 
 export default function SettingsPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]>("Company");
@@ -46,6 +47,7 @@ export default function SettingsPage() {
       {tab === "Roles" && <RolesTab />}
       {tab === "Fields" && <FieldsTab />}
       {tab === "Pipeline" && <PipelineTab canWrite={hasPerm("settings:write")} />}
+      {tab === "Reference lists" && <MastersTab canWrite={hasPerm("settings:write")} />}
       {tab === "Tags" && <TagsTab canWrite={hasPerm("settings:write")} />}
       {tab === "Documents" && <DocumentsTab canWrite={hasPerm("settings:write")} />}
       {tab === "Email Templates" && <TemplatesTab canWrite={hasPerm("settings:write")} />}

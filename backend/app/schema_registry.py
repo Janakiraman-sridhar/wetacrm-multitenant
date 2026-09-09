@@ -85,6 +85,11 @@ _LABEL_OVERRIDES = {
     "team_ids": "Team",
     "is_active": "Active",
     "insurer_id": "Insurer",
+    #: The intermediary, not the underwriter. Named here rather than in the page so
+    #: the form, the column picker and the filter cannot disagree about what it is
+    #: called — the derived label would otherwise read "Broker" in some places and
+    #: whatever a page hardcoded in others.
+    "broker_id": "Insurance company",
     "bank_id": "Bank",
     "customer_id": "Customer",
     "proposer_id": "Proposer",

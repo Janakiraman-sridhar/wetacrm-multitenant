@@ -1,7 +1,7 @@
 {
   "key": "insurance_agent",
   "name": "Insurance Agent",
-  "version": 6,
+  "version": 7,
   "description": "For an insurance agent or agency: customers instead of contacts, an enquiry-to-policy pipeline, insurer and bank masters, and renewal-focused reporting. Policies, Poster Studio and Loans arrive in later phases.",
   "modules": [
     {
@@ -575,7 +575,8 @@
       "HDFC Life",
       "ICICI Prudential",
       "SBI Life",
-      "Max Life"
+      "Max Life",
+      "Axis Max Life"
     ],
     "product_types": [
       "Motor - Private Car",

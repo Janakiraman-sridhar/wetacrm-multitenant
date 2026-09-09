@@ -456,3 +456,90 @@ def test_deleting_a_renewal_unlinks_the_policy_it_replaced(client, alpha, custom
 
     # And it can now be deleted, which it could not before.
     assert client.delete(f"{API}/policies/{original['id']}", headers=alpha.auth()).status_code == 200
+
+
+# --- the insurance company a policy was placed through ------------------------
+#
+# Two different companies, both named on the policy: the insurer underwrites the
+# risk, the intermediary carries the agency code the commission is paid against.
+# An agency reconciles by each of them separately, which is the whole reason this
+# is not one field.
+
+@pytest.fixture()
+def broker(client, alpha):
+    resp = client.post(
+        f"{API}/masters", json={"type": "broker", "name": "Test Insurance Broking"},
+        headers=alpha.auth(),
+    )
+    if resp.status_code == 409:
+        existing = client.get(
+            f"{API}/masters", params={"type": "broker", "active_only": False}, headers=alpha.auth()
+        ).json()
+        return next(m for m in existing if m["name"] == "Test Insurance Broking")
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+def test_broker_is_its_own_list_not_mixed_into_insurers(client, alpha, broker, masters):
+    insurers = client.get(f"{API}/masters", params={"type": "insurer"}, headers=alpha.auth()).json()
+    brokers = client.get(f"{API}/masters", params={"type": "broker"}, headers=alpha.auth()).json()
+
+    assert broker["id"] in [m["id"] for m in brokers]
+    assert broker["id"] not in [m["id"] for m in insurers], "the broker leaked into the insurer list"
+    assert masters["insurer"]["id"] not in [m["id"] for m in brokers]
+
+
+def test_a_policy_names_the_insurer_and_the_intermediary_separately(
+    client, alpha, customer, masters, broker
+):
+    created = make_policy(
+        client, alpha, customer, masters, suffix="BRK1", broker_id=broker["id"],
+    )
+    fetched = client.get(f"{API}/policies/{created['id']}", headers=alpha.auth()).json()
+
+    assert fetched["insurer"]["name"] == masters["insurer"]["name"]
+    assert fetched["broker"]["name"] == "Test Insurance Broking"
+    assert fetched["insurer_id"] != fetched["broker_id"]
+
+    client.delete(f"{API}/policies/{created['id']}", headers=alpha.auth())
+
+
+def test_the_book_can_be_read_by_intermediary(client, alpha, customer, masters, broker):
+    """The reason it is a column and not a note: an agency reconciles by it."""
+    placed = make_policy(client, alpha, customer, masters, suffix="BRK2", broker_id=broker["id"])
+    direct = make_policy(client, alpha, customer, masters, suffix="BRK3")
+
+    page = client.get(
+        f"{API}/policies", params={"broker_id": broker["id"]}, headers=alpha.auth()
+    ).json()
+    ids = [p["id"] for p in page["items"]]
+    assert placed["id"] in ids
+    assert direct["id"] not in ids, "a policy placed direct came back under the intermediary"
+
+    for row in (placed, direct):
+        client.delete(f"{API}/policies/{row['id']}", headers=alpha.auth())
+
+
+def test_the_intermediary_can_be_cleared(client, alpha, customer, masters, broker):
+    """A policy moved to direct business must actually lose it.
+
+    Checked by re-reading rather than by trusting the update's own response: the
+    relationship is still loaded on that session, so a clear that did nothing would
+    look like a clear that worked.
+    """
+    created = make_policy(client, alpha, customer, masters, suffix="BRK4", broker_id=broker["id"])
+    client.patch(f"{API}/policies/{created['id']}", json={"broker_id": None}, headers=alpha.auth())
+
+    fetched = client.get(f"{API}/policies/{created['id']}", headers=alpha.auth()).json()
+    assert fetched["broker_id"] is None
+    assert fetched["broker"] is None
+
+    client.delete(f"{API}/policies/{created['id']}", headers=alpha.auth())
+
+
+def test_it_is_called_what_an_agency_calls_it(client, alpha):
+    """The label is served, not hardcoded in the page, so every screen agrees."""
+    schema = client.get(f"{API}/schema/policies", headers=alpha.auth()).json()
+    labels = {f["key"]: f["label"] for f in schema["fields"]}
+    assert labels["broker_id"] == "Insurance company"
+    assert labels["insurer_id"] == "Insurer"

@@ -305,6 +305,45 @@ def test_valid_nominees_are_saved(client, alpha):
         client.delete(f"{API}/contacts/{created.json()['id']}", headers=alpha.auth())
 
 
+def test_editing_a_customer_keeps_the_nominees_it_was_not_asked_about(client, alpha):
+    """Omitting them leaves them alone; sending an empty list clears them.
+
+    The customer form now sends the whole list on every save, so the difference
+    matters: a page that edits an address and omits `nominees` must not wipe them,
+    and one that removes the last nominee must actually remove it.
+    """
+    created = client.post(
+        f"{API}/contacts",
+        json={
+            "first_name": "Nominee Keeper",
+            "nominees": [{"name": "Priya", "relation": "Spouse", "age": 38, "share_percent": 100}],
+        },
+        headers=alpha.auth(),
+    ).json()
+    try:
+        client.patch(f"{API}/contacts/{created['id']}", json={"city": "Chennai"},
+                     headers=alpha.auth())
+        kept = client.get(f"{API}/contacts/{created['id']}", headers=alpha.auth()).json()
+        assert [n["name"] for n in kept["nominees"]] == ["Priya"], "an unrelated edit wiped them"
+
+        replaced = client.patch(
+            f"{API}/contacts/{created['id']}",
+            json={"nominees": [
+                {"name": "Ravi", "relation": "Father", "age": 66, "share_percent": 100},
+            ]},
+            headers=alpha.auth(),
+        )
+        assert replaced.status_code == 200, replaced.text
+        after = client.get(f"{API}/contacts/{created['id']}", headers=alpha.auth()).json()
+        assert [n["name"] for n in after["nominees"]] == ["Ravi"]
+
+        client.patch(f"{API}/contacts/{created['id']}", json={"nominees": []}, headers=alpha.auth())
+        emptied = client.get(f"{API}/contacts/{created['id']}", headers=alpha.auth()).json()
+        assert emptied["nominees"] == []
+    finally:
+        client.delete(f"{API}/contacts/{created['id']}", headers=alpha.auth())
+
+
 # --- birthdays ----------------------------------------------------------------
 
 def test_birthdays_lists_customers_whose_birthday_is_near(client, alpha):

@@ -36,6 +36,13 @@ export interface FieldDef {
   section?: string; // fields with the same section render under one header
   /** Rendered full-width below this field, fed the live form values (e.g. a linked-record preview). */
   after?: (values: Record<string, any>) => React.ReactNode;
+  /**
+   * Take over this row entirely — for a value no `<input>` describes, such as a
+   * repeating sub-record. Given the form's `control` so it can register itself with
+   * react-hook-form like every other field, which is what keeps validation, dirty
+   * state and reset working rather than needing a second state tree beside them.
+   */
+  render?: (ctx: { control: any; name: string }) => React.ReactNode;
 }
 
 // --- form rendering -------------------------------------------------------
@@ -149,7 +156,23 @@ export function FormFields({
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {group.items.map((f) => (
               <Fragment key={f.name}>
-                <FieldControl field={f} register={register} control={control} errors={errors} />
+                {f.render ? (
+                  <div className="sm:col-span-2">
+                    {/* The section header already carries the name when they match,
+                        and two identical headings stacked reads as a bug. */}
+                    {f.label !== f.section && <label className="label">{f.label}</label>}
+                    {f.render({ control, name: f.name })}
+                    {/* A custom control skips FieldControl, so its validation message
+                        needs showing here or the form refuses to submit in silence. */}
+                    {errors?.[f.name] && (
+                      <p className="mt-1 text-xs text-red-600">
+                        {String(errors[f.name]?.message ?? "Invalid value")}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <FieldControl field={f} register={register} control={control} errors={errors} />
+                )}
                 {f.after && <div className="sm:col-span-2">{f.after(values)}</div>}
               </Fragment>
             ))}

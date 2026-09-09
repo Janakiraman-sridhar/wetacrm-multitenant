@@ -48,6 +48,7 @@ class PolicyBase(ORMModel):
     plan_name: str | None = None
 
     insurer_id: str | None = None
+    broker_id: str | None = None
     bank_id: str | None = None
     branch: str | None = None
     sourcing_channel: str | None = None
@@ -92,6 +93,7 @@ class PolicyUpdate(ORMModel):
     product_line: str | None = None
     plan_name: str | None = None
     insurer_id: str | None = None
+    broker_id: str | None = None
     bank_id: str | None = None
     branch: str | None = None
     sourcing_channel: str | None = None
@@ -130,6 +132,7 @@ class PolicyOut(PolicyBase):
     renewed_to_id: str | None = None
 
     insurer: MasterOut | None = None
+    broker: MasterOut | None = None
     bank: MasterOut | None = None
     customer: CustomerBrief | None = None
     owner: UserBrief | None = None

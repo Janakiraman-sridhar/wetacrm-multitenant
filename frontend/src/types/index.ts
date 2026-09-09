@@ -547,6 +547,8 @@ export interface Policy {
   product_line: ProductLine;
   plan_name?: string | null;
   insurer_id?: string | null;
+  /** The intermediary the policy was placed through, where it was not placed direct. */
+  broker_id?: string | null;
   bank_id?: string | null;
   branch?: string | null;
   sourcing_channel?: string | null;
@@ -576,6 +578,7 @@ export interface Policy {
   created_at: string;
   updated_at: string;
   insurer?: Master | null;
+  broker?: Master | null;
   bank?: Master | null;
   customer?: { id: string; first_name: string; last_name: string; full_name: string; mobile?: string | null } | null;
   owner?: UserBrief | null;

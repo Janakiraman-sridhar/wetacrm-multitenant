@@ -28,7 +28,9 @@ PAYMENT_FREQUENCIES = ["single", "annual", "half_yearly", "quarterly", "monthly"
 #: reminder job uses.
 RENEWAL_WINDOWS = [60, 30, 15, 7, 1]
 
-MASTER_TYPES = ["insurer", "bank", "branch", "product_type", "relation", "loan_type"]
+MASTER_TYPES = [
+    "insurer", "broker", "bank", "branch", "product_type", "relation", "loan_type",
+]
 
 
 class Master(TenantScoped, BaseModel):
@@ -72,6 +74,11 @@ class Policy(TenantScoped, BaseModel):
     plan_name: Mapped[str | None] = mapped_column(String(200))
 
     insurer_id: Mapped[str | None] = mapped_column(ForeignKey("masters.id"), index=True)
+    #: The intermediary the business was placed through, where it was not placed
+    #: direct. Distinct from `insurer_id`: one underwrites the risk, the other
+    #: carries the agency code the commission is paid against, and an agency
+    #: reconciles by both.
+    broker_id: Mapped[str | None] = mapped_column(ForeignKey("masters.id"), index=True)
     #: Bancassurance source — the bank that introduced the business. Filterable
     #: because commission and reconciliation are organised by it.
     bank_id: Mapped[str | None] = mapped_column(ForeignKey("masters.id"), index=True)
@@ -122,6 +129,7 @@ class Policy(TenantScoped, BaseModel):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     insurer = relationship("Master", foreign_keys=[insurer_id], lazy="joined")
+    broker = relationship("Master", foreign_keys=[broker_id], lazy="joined")
     bank = relationship("Master", foreign_keys=[bank_id], lazy="joined")
     customer = relationship("Contact", foreign_keys=[customer_id], lazy="joined")
     owner = relationship("User", lazy="joined")

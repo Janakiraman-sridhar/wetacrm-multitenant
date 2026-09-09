@@ -99,6 +99,7 @@ def list_policies(
     status: str | None = None,
     product_line: str | None = None,
     insurer_id: str | None = None,
+    broker_id: str | None = None,
     bank_id: str | None = None,
     customer_id: str | None = None,
     owner_id: str | None = None,
@@ -113,6 +114,8 @@ def list_policies(
         stmt = stmt.where(Policy.product_line == product_line)
     if insurer_id:
         stmt = stmt.where(Policy.insurer_id == insurer_id)
+    if broker_id:
+        stmt = stmt.where(Policy.broker_id == broker_id)
     if bank_id:
         stmt = stmt.where(Policy.bank_id == bank_id)
     if customer_id:

@@ -231,6 +231,24 @@ render details the server cannot know, like which hook supplies a select's optio
 top. Custom form values are named `custom.<key>`, which react-hook-form nests into
 exactly the shape the API wants.
 
+**A form shows what you need and hides the rest.** The customer form runs to
+thirty-three fields; an agent holding a name and a number should not scroll past a
+KYC block and a nominee editor to reach Save. `FormFields` collapses every
+`section`, and the rule differs by intent: **creating** opens the first group only —
+on a new record everything else is empty by definition, and a section that opens
+because a dropdown has a default is open for no reason — while **editing** opens
+whatever holds data, so nothing a colleague filled in hides behind a header nobody
+thinks to click. A collapsed header shows how many of its fields are filled, so it
+never conceals something silently. Sections group by **name**, not by adjacency:
+custom fields are appended after the page's own, so a workspace with a custom KYC
+field used to get two "KYC" headers with the whole form between them.
+
+`_INTERNAL_COLUMNS` in `schema_registry.py` keeps storage out of the field list.
+A blind index and a ciphertext are how a PAN is *stored* — the field is `pan`, and
+the page supplies it. Offering them meant Settings → Fields listed six entries
+nobody could act on, and every one was another line between an agent and the field
+they wanted.
+
 ### Posters — one renderer, and layers that know what they need
 
 `app/poster/render.py` renders a design from a layer spec, and **everything goes

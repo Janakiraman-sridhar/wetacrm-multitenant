@@ -1,7 +1,9 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { Check, ChevronDown, LayoutList, ListFilter, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import {
+  Check, ChevronDown, ChevronRight, LayoutList, ListFilter, Pencil, Plus, Search, Trash2,
+} from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { z, type ZodTypeAny } from "zod";
@@ -121,39 +123,122 @@ export function FormFields({
   register,
   errors,
   control,
+  editing = false,
 }: {
   fields: FieldDef[];
   register: any;
   errors: any;
   control: any;
+  /** Editing an existing record, rather than creating one. */
+  editing?: boolean;
 }) {
   // Live values for `after` renderers (linked-record previews etc.).
   const values = useWatch({ control }) as Record<string, any>;
 
-  // Group consecutive fields that share a section under one header.
+  /**
+   * One header per section name, in the order each first appears.
+   *
+   * Grouping only consecutive fields meant a section could be drawn twice: the
+   * tenant's own custom fields are appended after the page's, so a workspace with a
+   * custom KYC field got two "KYC" headers with the rest of the form between them.
+   */
   const groups = useMemo(() => {
     const out: { section?: string; items: FieldDef[] }[] = [];
+    const byName = new Map<string, { section?: string; items: FieldDef[] }>();
     for (const f of fields) {
+      const existing = f.section ? byName.get(f.section) : undefined;
+      if (existing) {
+        existing.items.push(f);
+        continue;
+      }
+      const group = { section: f.section, items: [f] };
+      // Ungrouped fields keep running into the block above them, as before.
       const last = out[out.length - 1];
-      if (last && last.section === f.section) last.items.push(f);
-      else out.push({ section: f.section, items: [f] });
+      if (!f.section && last && !last.section) last.items.push(f);
+      else out.push(group);
+      if (f.section) byName.set(f.section, group);
     }
     return out;
   }, [fields]);
 
+  const filled = (f: FieldDef) => {
+    const v = values?.[f.name];
+    return Array.isArray(v) ? v.length > 0 : v !== undefined && v !== null && v !== "";
+  };
+
+  /**
+   * Which sections start open.
+   *
+   * A customer form runs to thirty-three fields over two screens, and an agent with
+   * a name and a phone number should not scroll past a KYC block, an address block
+   * and a nominee editor to reach Save.
+   *
+   * Creating opens the first group only — on a new record every other section is
+   * empty by definition, and a section that opens because a dropdown has a default
+   * is open for no reason. Editing opens whatever has something in it, so nothing a
+   * colleague filled in is hidden behind a header nobody thinks to click.
+   *
+   * Computed once per opening rather than on every keystroke: recomputing would slam
+   * a section shut the moment someone cleared the last field they were editing.
+   */
+  const initiallyOpen = useMemo(
+    () =>
+      new Set(
+        groups
+          .filter((g, i) => i === 0 || !g.section || (editing && g.items.some(filled)))
+          .map((g) => g.section ?? "")
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [groups.length, editing]
+  );
+  const [open, setOpen] = useState<Set<string>>(initiallyOpen);
+  useEffect(() => setOpen(initiallyOpen), [initiallyOpen]);
+
   return (
     <div className="space-y-5">
-      {groups.map((group, gi) => (
+      {groups.map((group, gi) => {
+        const key = group.section ?? "";
+        const isOpen = !group.section || open.has(key);
+        const count = group.items.filter(filled).length;
+        return (
         <div key={gi}>
           {group.section && (
-            <div className="mb-3 flex items-center gap-3">
+            <button
+              type="button"
+              className="mb-3 flex w-full items-center gap-3 text-left"
+              onClick={() =>
+                setOpen((prev) => {
+                  const next = new Set(prev);
+                  next.has(key) ? next.delete(key) : next.add(key);
+                  return next;
+                })
+              }
+            >
+              <ChevronRight
+                size={14}
+                className={clsx(
+                  "shrink-0 text-slate-400 transition-transform",
+                  isOpen && "rotate-90"
+                )}
+              />
               <span className="text-[11px] font-semibold uppercase tracking-wider text-primary-600 dark:text-primary-400">
                 {group.section}
               </span>
+              {/* So a collapsed section never hides something silently. */}
+              {count > 0 && (
+                <span className="badge bg-primary-50 text-[10px] text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
+                  {count}
+                </span>
+              )}
+              {!isOpen && (
+                <span className="text-xs text-slate-400">
+                  {group.items.length} field{group.items.length === 1 ? "" : "s"}
+                </span>
+              )}
               <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
-            </div>
+            </button>
           )}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className={clsx("grid grid-cols-1 gap-4 sm:grid-cols-2", !isOpen && "hidden")}>
             {group.items.map((f) => (
               <Fragment key={f.name}>
                 {f.render ? (
@@ -178,7 +263,8 @@ export function FormFields({
             ))}
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -732,7 +818,13 @@ export function CrudPage<T extends { id: string }>({
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? `Edit ${one}` : `New ${one}`} wide>
         <form onSubmit={form.handleSubmit((v) => saveMutation.mutate(v))} className="space-y-6">
-          <FormFields fields={effectiveFields} register={form.register} errors={form.formState.errors} control={form.control} />
+          <FormFields
+            fields={effectiveFields}
+            register={form.register}
+            errors={form.formState.errors}
+            control={form.control}
+            editing={!!editing}
+          />
           <div className="-mx-5 -mb-5 flex justify-end gap-2 border-t border-slate-200 bg-slate-50/60 px-5 py-3.5 dark:border-slate-800 dark:bg-slate-900/60">
             <button type="button" className="btn-secondary" onClick={() => setModalOpen(false)}>
               Cancel

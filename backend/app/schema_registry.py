@@ -48,6 +48,25 @@ CUSTOMISABLE_MODULES = list(CUSTOMISABLE_MODELS)
 # Columns that are plumbing, not fields a user would ever configure.
 _HIDDEN_COLUMNS = {"id", "created_at", "updated_at", "tenant_id", "custom"}
 
+#: Storage a column happens to need, which is not a field.
+#:
+#: A blind index and a ciphertext are how a PAN is *stored*; the field is `pan`, and
+#: the page supplies it. Offering these meant Settings → Fields listed six entries
+#: nobody could act on — you cannot usefully relabel `pan_index` or hide
+#: `aadhaar_encrypted` — and every one of them was another line between an agent and
+#: the field they were looking for. Derived columns go here too: `birthday_key` is
+#: computed from the date of birth and editing it would mean nothing.
+_INTERNAL_COLUMNS: dict[str, set[str]] = {
+    "contacts": {
+        "pan_encrypted", "pan_index",
+        "aadhaar_encrypted", "aadhaar_index", "aadhaar_last4",
+        "birthday_key",
+    },
+    # The renewal chain is written by `renew()`, both ends of it. A policy's
+    # predecessor is not something anyone types into a form.
+    "policies": {"renewal_of_id", "renewed_to_id"},
+}
+
 # Columns a user may relabel but must not hide or make optional, because business
 # logic depends on them being present.
 _LOCKED_COLUMNS: dict[str, set[str]] = {
@@ -179,9 +198,10 @@ def base_fields(module: str) -> list[BaseField]:
         return []
 
     locked = _LOCKED_COLUMNS.get(module, set())
+    internal = _INTERNAL_COLUMNS.get(module, set())
     fields: list[BaseField] = []
     for column in class_mapper(model).columns:
-        if column.name in _HIDDEN_COLUMNS:
+        if column.name in _HIDDEN_COLUMNS or column.name in internal:
             continue
         fields.append(
             BaseField(

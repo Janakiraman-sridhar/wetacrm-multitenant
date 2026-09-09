@@ -43,6 +43,9 @@ class TemplateConfig:
     settings: dict[str, Any] = field(default_factory=dict)
     email_templates: list[dict] = field(default_factory=list)
     masters: dict[str, list] = field(default_factory=dict)
+    #: [{key, enabled, order}] — which dashboard cards a workspace opens with.
+    #: Read selectively, like `modules`: naming any names all.
+    dashboard: list[dict] = field(default_factory=list)
 
     def module_map(self) -> dict[str, TemplateModule]:
         return {m.key: m for m in self.modules}
@@ -128,4 +131,5 @@ def parse_template(raw: dict) -> TemplateConfig:
         settings=raw.get("settings", {}),
         email_templates=raw.get("email_templates", []),
         masters=raw.get("masters", {}),
+        dashboard=raw.get("dashboard", []),
     )

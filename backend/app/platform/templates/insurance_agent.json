@@ -1,7 +1,7 @@
 {
   "key": "insurance_agent",
   "name": "Insurance Agent",
-  "version": 7,
+  "version": 8,
   "description": "For an insurance agent or agency: customers instead of contacts, an enquiry-to-policy pipeline, insurer and bank masters, and renewal-focused reporting. Policies, Poster Studio and Loans arrive in later phases.",
   "modules": [
     {
@@ -626,5 +626,72 @@
       "Loan Against Property",
       "Education Loan"
     ]
-  }
+  },
+  "dashboard": [
+    {
+      "key": "insurance_book",
+      "enabled": true,
+      "order": 1
+    },
+    {
+      "key": "renewals_due",
+      "enabled": true,
+      "order": 2
+    },
+    {
+      "key": "birthdays",
+      "enabled": true,
+      "order": 3
+    },
+    {
+      "key": "deal_kpis",
+      "enabled": true,
+      "order": 4
+    },
+    {
+      "key": "revenue_series",
+      "enabled": true,
+      "order": 5
+    },
+    {
+      "key": "lead_conversion",
+      "enabled": true,
+      "order": 6
+    },
+    {
+      "key": "pipeline_by_stage",
+      "enabled": true,
+      "order": 7
+    },
+    {
+      "key": "lead_sources",
+      "enabled": true,
+      "order": 8
+    },
+    {
+      "key": "win_rate",
+      "enabled": false,
+      "order": 9
+    },
+    {
+      "key": "tasks_overview",
+      "enabled": true,
+      "order": 10
+    },
+    {
+      "key": "upcoming_meetings",
+      "enabled": true,
+      "order": 11
+    },
+    {
+      "key": "recent_activity",
+      "enabled": true,
+      "order": 12
+    },
+    {
+      "key": "team_performance",
+      "enabled": true,
+      "order": 13
+    }
+  ]
 }

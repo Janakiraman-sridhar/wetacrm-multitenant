@@ -23,6 +23,8 @@ from app.leads.models import LeadSource
 from app.platform.catalog import MODULE_CATALOG, MODULES_BY_KEY
 from app.platform.models import CrmTemplate, TenantModule
 from app.platform.template_schema import TemplateConfig, parse_template
+from app.reports import widgets
+from app.reports.widgets import DASHBOARD_SETTING
 from app.settings.models import EmailTemplate, Setting, Tag
 from app.users.models import Role
 
@@ -100,6 +102,7 @@ def apply_template(db: Session, tenant_id: str, config: TemplateConfig) -> None:
     _apply_lead_sources(db, config)
     _apply_tags(db, config)
     _apply_settings(db, config)
+    _apply_dashboard(db, config)
     _apply_masters(db, config)
     _apply_poster_presets(db, config)
     _apply_email_templates(db, config)
@@ -191,6 +194,23 @@ def _apply_settings(db: Session, config: TemplateConfig) -> None:
     # phases can read them without another table per list.
     if config.masters and "masters" not in existing:
         db.add(Setting(key="masters", value=config.masters))
+
+
+def _apply_dashboard(db: Session, config: TemplateConfig) -> None:
+    """Materialise the template's dashboard into this workspace's own setting.
+
+    Written out in full — every catalog key, not just the ones the template named —
+    so the read path never has to re-apply template semantics, and so an admin
+    editing this workspace's dashboard is editing a complete picture rather than a
+    fragment with invisible defaults behind it. The template is not consulted again
+    afterwards: like every other part of provisioning, it is copied, not referenced.
+    """
+    if db.scalar(select(Setting).where(Setting.key == DASHBOARD_SETTING)):
+        return
+    db.add(Setting(
+        key=DASHBOARD_SETTING,
+        value={widgets.DASHBOARD_KEY: widgets.materialise(config.dashboard)},
+    ))
 
 
 def _apply_masters(db: Session, config: TemplateConfig) -> None:

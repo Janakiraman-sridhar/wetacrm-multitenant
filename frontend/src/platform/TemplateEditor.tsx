@@ -9,6 +9,8 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ConfirmDialog } from "@/components/Modal";
 import { useToast } from "@/context/ToastContext";
 import { api, errorMessage } from "@/lib/api";
+import { DashboardBoard, WidgetSetting } from "@/components/DashboardBoard";
+import { useWidgetCatalog } from "@/lib/dashboard";
 import { CatalogModule, ModuleBoard, ModuleSetting, mergeWithCatalog } from "@/platform/ModuleBoard";
 import type { CrmTemplateDetail } from "@/types";
 
@@ -27,6 +29,7 @@ const outcomeOf = (s: Stage): Outcome => (s.is_won ? "won" : s.is_lost ? "lost" 
 
 const SECTIONS = [
   { id: "modules", label: "Modules" },
+  { id: "dashboard", label: "Dashboard" },
   { id: "pipeline", label: "Pipeline" },
   { id: "sources", label: "Lead sources" },
   { id: "roles", label: "Roles" },
@@ -51,6 +54,7 @@ export default function TemplateEditor() {
   const queryClient = useQueryClient();
 
   const [modules, setModules] = useState<ModuleSetting[]>([]);
+  const [dashboard, setDashboard] = useState<WidgetSetting[]>([]);
   const [stages, setStages] = useState<Stage[]>([]);
   const [sources, setSources] = useState<string[]>([]);
   const [newStage, setNewStage] = useState("");
@@ -69,21 +73,42 @@ export default function TemplateEditor() {
     queryFn: async () => (await api.get<CatalogModule[]>("/platform/module-catalog")).data,
     staleTime: 10 * 60_000,
   });
+  const { data: widgetCatalog } = useWidgetCatalog();
 
   useEffect(() => {
     if (!template || !catalog) return;
     const merged = mergeWithCatalog(catalog, template.config.modules);
     const nextStages = template.config.stages ?? [];
     const nextSources = template.config.lead_sources ?? [];
+    // Same rule as modules: a template that names any card names all of them, so a
+    // card it leaves out starts off rather than quietly on.
+    const named = new Map(
+      ((template.config.dashboard ?? []) as WidgetSetting[]).map((w) => [w.key, w])
+    );
+    const selective = named.size > 0;
+    const nextDashboard = (widgetCatalog ?? [])
+      .map((def) => {
+        const override = named.get(def.key);
+        return {
+          key: def.key,
+          enabled: def.locked ? true : override ? override.enabled : !selective,
+          order: override?.order ?? def.order,
+        };
+      })
+      .sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
+
     setModules(merged);
     setStages(nextStages);
     setSources(nextSources);
-    saved.current = JSON.stringify([merged, nextStages, nextSources]);
-  }, [template, catalog]);
+    setDashboard(nextDashboard);
+    saved.current = JSON.stringify([merged, nextStages, nextSources, nextDashboard]);
+  }, [template, catalog, widgetCatalog]);
 
   const dirty = useMemo(
-    () => saved.current !== "" && JSON.stringify([modules, stages, sources]) !== saved.current,
-    [modules, stages, sources]
+    () =>
+      saved.current !== "" &&
+      JSON.stringify([modules, stages, sources, dashboard]) !== saved.current,
+    [modules, stages, sources, dashboard]
   );
 
   const save = useMutation({
@@ -93,11 +118,14 @@ export default function TemplateEditor() {
           modules: modules.map((m, index) => ({ ...m, order: index + 1 })),
           stages: stages.map((s, index) => ({ ...s, order: index + 1 })),
           lead_sources: sources,
+          dashboard: dashboard.map((w, index) => ({
+            key: w.key, enabled: w.enabled, order: index + 1,
+          })),
         })
       ).data,
     onSuccess: () => {
       toast("Template saved");
-      saved.current = JSON.stringify([modules, stages, sources]);
+      saved.current = JSON.stringify([modules, stages, sources, dashboard]);
       queryClient.invalidateQueries({ queryKey: ["platform", "template", templateKey] });
       queryClient.invalidateQueries({ queryKey: ["platform", "templates"] });
     },
@@ -161,10 +189,11 @@ export default function TemplateEditor() {
                 <button
                   className="btn-secondary"
                   onClick={() => {
-                    const [m, s, l] = JSON.parse(saved.current);
+                    const [m, s, l, d] = JSON.parse(saved.current);
                     setModules(m);
                     setStages(s);
                     setSources(l);
+                    setDashboard(d);
                   }}
                 >
                   Discard
@@ -223,6 +252,24 @@ export default function TemplateEditor() {
             catalog={catalog}
             value={modules}
             onChange={setModules}
+            disabled={readOnly}
+          />
+        </div>
+      )}
+
+      {section === "dashboard" && (
+        <div className="space-y-3">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            What a workspace built from this template opens on, and in what order. A
+            card whose module is switched off in this template never appears, so an
+            agency that does not sell on a pipeline does not start their day looking
+            at one. Each workspace can change its own afterwards.
+          </p>
+          <DashboardBoard
+            catalog={widgetCatalog ?? []}
+            value={dashboard}
+            onChange={setDashboard}
+            enabledModules={new Set(modules.filter((m) => m.enabled).map((m) => m.key))}
             disabled={readOnly}
           />
         </div>

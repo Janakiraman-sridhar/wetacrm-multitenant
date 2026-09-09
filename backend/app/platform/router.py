@@ -636,7 +636,7 @@ def update_template(
 
         config = dict(row.config or {})
         data = payload.model_dump(exclude_unset=True)
-        for field in ("modules", "stages", "lead_sources", "tags", "settings"):
+        for field in ("modules", "stages", "lead_sources", "tags", "settings", "dashboard"):
             if field in data and data[field] is not None:
                 config[field] = data[field]
         if data.get("name"):

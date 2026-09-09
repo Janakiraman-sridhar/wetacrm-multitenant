@@ -47,7 +47,7 @@ cd backend && .venv/Scripts/python.exe -m pytest          # all
 `backend/tests/` holds the tenant-isolation (Phase 0), template/provisioning (Phase 1)
 custom-field (Phase 2), customer-PII (Phase 3), policy (Phase 4), poster/WhatsApp (Phase 5) and
 loans/reports/insurance-quotation (Phase 6) and hardening (Phase 7: auth/RBAC, billing and
-CSV I/O, signed downloads, purge, export, indexes, security review) and email-workflow suites — 522 tests. Install
+CSV I/O, signed downloads, purge, export, indexes, security review) and email-workflow suites — 547 tests. Install
 test deps with `pip install -r requirements-dev.txt`. There is no frontend test suite;
 `npm run build` (which runs `tsc -b`) is the only typecheck gate.
 
@@ -420,6 +420,37 @@ then refused by the API, which requires every share to be at least 1.
 needs. It is handed the form's `control` so it registers with react-hook-form like
 any other field — validation, dirty state and reset keep working rather than needing
 a second state tree beside them.
+
+### The dashboard is data too
+
+`app/reports/widgets.py` is the mirror of `platform/catalog.py`, for the same
+reason. The dashboard was a fixed sequence in `Dashboard.tsx`, so an insurance
+workspace opened on six deal figures reading zero and a new vertical could only be
+served by another `if` in that file. `GET /api/v1/dashboard-widgets` now returns the
+cards in order and the page renders the list it is given.
+
+- A `WidgetDef` names the module it reports on. A card whose module is off is never
+  served — the module gating does the work, no second rule for the dashboard.
+- **`resolve()` is read at two moments and they do not mean the same thing.** A
+  *template* is hand-written and may name four cards: naming any names all, so the
+  rest are off (`selective=True`). A *workspace's stored layout* is written by the
+  editor and always names every card, so a key it omits is one shipped afterwards
+  and gets the catalog default (`selective=False`) — the equivalent of
+  `backfill_new_modules()`, without which a new card would arrive switched off
+  everywhere and nobody would ever see it. Naming *nothing* is unconfigured either
+  way, and still gets everything.
+- Provisioning calls `materialise()` and writes the whole picture into the
+  `dashboard_widgets` setting. A settings row rather than a table because nothing
+  points at a widget, unlike `tenant_modules` which permissions and routes join to.
+  It is stored under a `widgets` key inside that row: `SettingOut.value` is typed
+  `dict`, so a bare list breaks `GET /settings` for every other row.
+- Edited in two places, both the same two-column board: **Settings → Dashboard** for
+  one workspace, and the **Dashboard tab** of a template in the console for every
+  workspace made from it afterwards.
+
+Adding a card is a `WidgetDef` plus an entry in the `WIDGETS` map in `Dashboard.tsx`.
+A key the server sends and this build does not know is skipped rather than crashing,
+so a rolling deploy is survivable.
 
 ### The sidebar is data, not code
 

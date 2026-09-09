@@ -127,6 +127,8 @@ class TemplateUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=150)
     description: str | None = None
     modules: list[dict] | None = None
+    #: Which dashboard cards a workspace built from this opens with.
+    dashboard: list[dict] | None = None
     stages: list[dict] | None = None
     lead_sources: list[str] | None = None
     tags: list[dict] | None = None

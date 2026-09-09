@@ -17,7 +17,7 @@ import { formatDate, formatDateTime, formatMoney, timeAgo } from "@/lib/format";
 import { BirthdayPanel } from "@/components/BirthdayPanel";
 import { InsuranceKpis } from "@/components/InsuranceKpis";
 import { RenewalPanel } from "@/components/RenewalPanel";
-import { useModules } from "@/lib/modules";
+import { useDashboardLayout } from "@/lib/dashboard";
 
 const PIE_COLORS = ["#4F46E5", "#10B981", "#F59E0B", "#EF4444", "#0EA5E9", "#8B5CF6", "#EC4899", "#64748B"];
 
@@ -89,8 +89,7 @@ function ChartCard({
 // --- page -----------------------------------------------------------------
 
 export default function Dashboard() {
-  const { data: modules } = useModules();
-  const hasPolicies = (modules ?? []).some((m) => m.module_key === "policies");
+  const { data: layout = [] } = useDashboardLayout();
   const { user } = useAuth();
   const [preset, setPreset] = useState<PresetKey>("12m");
   const [range, setRange] = useState(() => presetRange("12m"));
@@ -124,61 +123,75 @@ export default function Dashboard() {
    * The deal-centric figures the product shipped with. Kept whole; what changes
    * for an insurance workspace is where they sit, not what they say.
    */
-  const dealKpis = (
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <KpiCard
-          label="Revenue (won)"
-          value={formatMoney(kpis.revenue)}
-          sub={`${kpis.won_deals} deal${kpis.won_deals === 1 ? "" : "s"} won`}
-          icon={IndianRupee}
-          tone="bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-300"
-          onClick={() => open("revenue", "Revenue — won deals")}
-        />
-        <KpiCard
-          label="Active Leads"
-          value={kpis.active_leads}
-          sub="new · contacted · qualified"
-          icon={Target}
-          tone="bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-300"
-          onClick={() => open("active_leads", "Active leads")}
-        />
-        <KpiCard
-          label="Open Deals"
-          value={kpis.open_deals}
-          sub={formatMoney(kpis.open_deals_value)}
-          icon={Briefcase}
-          tone="bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
-          onClick={() => open("open_deals", "Open deals")}
-        />
-        <KpiCard
-          label="Won Deals"
-          value={kpis.won_deals}
-          sub={`${data.win_rate.win_rate}% win rate`}
-          icon={Trophy}
-          tone="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"
-          onClick={() => open("won_deals", "Won deals")}
-        />
-        <KpiCard
-          label="Tasks Due"
-          value={kpis.tasks_due}
-          sub="open tasks due in period"
-          icon={CheckSquare}
-          tone="bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300"
-          onClick={() => open("tasks_due", "Tasks due in period")}
-        />
-        <KpiCard
-          label="Meetings"
-          value={kpis.meetings}
-          sub="scheduled in period"
-          icon={CalendarDays}
-          tone="bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300"
-          onClick={() => open("meetings", "Meetings in period")}
-        />
-      </div>
-  );
-
-  const dealCharts = (
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+  /**
+   * Every card this page can draw, by catalog key. The page renders the list the
+   * server sends, in the order it sends it — which is what makes a new vertical a
+   * template decision rather than another `if` in this file.
+   *
+   * They are all built, and only the ones in the layout are mounted. Cheap, because
+   * the data behind them arrives in one response either way.
+   */
+  const WIDGETS: Record<string, { full?: boolean; node: React.ReactNode }> = {
+    insurance_book: { full: true, node: <InsuranceKpis /> },
+    renewals_due: { full: false, node: <RenewalPanel compact /> },
+    birthdays: { full: false, node: <BirthdayPanel compact /> },
+    deal_kpis: {
+      full: true,
+      node: (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <KpiCard
+            label="Revenue (won)"
+            value={formatMoney(kpis.revenue)}
+            sub={`${kpis.won_deals} deal${kpis.won_deals === 1 ? "" : "s"} won`}
+            icon={IndianRupee}
+            tone="bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-300"
+            onClick={() => open("revenue", "Revenue — won deals")}
+          />
+          <KpiCard
+            label="Active Leads"
+            value={kpis.active_leads}
+            sub="new · contacted · qualified"
+            icon={Target}
+            tone="bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-300"
+            onClick={() => open("active_leads", "Active leads")}
+          />
+          <KpiCard
+            label="Open Deals"
+            value={kpis.open_deals}
+            sub={formatMoney(kpis.open_deals_value)}
+            icon={Briefcase}
+            tone="bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
+            onClick={() => open("open_deals", "Open deals")}
+          />
+          <KpiCard
+            label="Won Deals"
+            value={kpis.won_deals}
+            sub={`${data.win_rate.win_rate}% win rate`}
+            icon={Trophy}
+            tone="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"
+            onClick={() => open("won_deals", "Won deals")}
+          />
+          <KpiCard
+            label="Tasks Due"
+            value={kpis.tasks_due}
+            sub="open tasks due in period"
+            icon={CheckSquare}
+            tone="bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300"
+            onClick={() => open("tasks_due", "Tasks due in period")}
+          />
+          <KpiCard
+            label="Meetings"
+            value={kpis.meetings}
+            sub="scheduled in period"
+            icon={CalendarDays}
+            tone="bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300"
+            onClick={() => open("meetings", "Meetings in period")}
+          />
+        </div>
+      ),
+    },
+    revenue_series: {
+      node: (
         <ChartCard title="Revenue Over Time" onViewData={() => open("revenue_series", "Revenue — won deals")}>
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={revenueSeries}>
@@ -190,7 +203,10 @@ export default function Dashboard() {
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
-
+      ),
+    },
+    lead_conversion: {
+      node: (
         <ChartCard title="Lead Conversion" onViewData={() => open("lead_conversion", "Leads created in period")}>
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={conversionSeries}>
@@ -204,7 +220,10 @@ export default function Dashboard() {
             </LineChart>
           </ResponsiveContainer>
         </ChartCard>
-
+      ),
+    },
+    pipeline_by_stage: {
+      node: (
         <ChartCard title="Open Pipeline by Stage" onViewData={() => open("pipeline_by_stage", "Open deals by stage")}>
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={data.pipeline_by_stage} layout="vertical">
@@ -218,7 +237,10 @@ export default function Dashboard() {
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
-
+      ),
+    },
+    lead_sources: {
+      node: (
         <ChartCard title="Lead Sources" onViewData={() => open("lead_sources", "Leads by source")}>
           {data.lead_sources.length === 0 ? (
             <p className="py-16 text-center text-sm text-slate-400">No leads in this period.</p>
@@ -236,7 +258,10 @@ export default function Dashboard() {
             </ResponsiveContainer>
           )}
         </ChartCard>
-
+      ),
+    },
+    win_rate: {
+      node: (
         <ChartCard title={`Win Rate — ${data.win_rate.win_rate}%`} onViewData={() => open("win_rate", "Closed deals (won + lost)")}>
           {data.win_rate.won + data.win_rate.lost === 0 ? (
             <p className="py-16 text-center text-sm text-slate-400">No deals closed in this period.</p>
@@ -253,7 +278,10 @@ export default function Dashboard() {
             </ResponsiveContainer>
           )}
         </ChartCard>
-
+      ),
+    },
+    tasks_overview: {
+      node: (
         <ChartCard title="Tasks Overview" onViewData={() => open("tasks_overview", "Tasks created in period")}>
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={tasksOverview}>
@@ -265,18 +293,72 @@ export default function Dashboard() {
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
-      </div>
-  );
-
-  const insuranceBook = (
-    <>
-      <InsuranceKpis />
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <RenewalPanel compact />
-        <BirthdayPanel compact />
-      </div>
-    </>
-  );
+      ),
+    },
+    upcoming_meetings: {
+      node: (
+        <ChartCard title="Upcoming Meetings" icon={CalendarClock} onViewData={() => open("upcoming_meetings", "Meetings in period")}>
+          {data.upcoming_meetings.length === 0 && <p className="text-sm text-slate-400">No meetings in this period.</p>}
+          <ul className="space-y-2.5">
+            {data.upcoming_meetings.map((m: any) => (
+              <li key={m.id} className="rounded-lg border border-slate-100 p-2.5 text-sm dark:border-slate-800">
+                <p className="font-medium">{m.title}</p>
+                <p className="text-xs text-slate-400">
+                  {formatDateTime(m.starts_at)}
+                  {m.location ? ` · ${m.location}` : ""}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </ChartCard>
+      ),
+    },
+    recent_activity: {
+      node: (
+        <ChartCard title="Recent Activity" icon={CheckSquare} onViewData={() => open("recent_activities", "Activities in period")}>
+          {data.recent_activities.length === 0 && <p className="text-sm text-slate-400">No activity in this period.</p>}
+          <ul className="space-y-2.5">
+            {data.recent_activities.map((a: any) => (
+              <li key={a.id} className="flex items-start gap-2 text-sm">
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary-500" />
+                <div className="min-w-0">
+                  <p className="truncate">{a.title}</p>
+                  <p className="text-xs text-slate-400">
+                    {a.user ? `${a.user} · ` : ""}
+                    {timeAgo(a.created_at)}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </ChartCard>
+      ),
+    },
+    team_performance: {
+      node: (
+        <ChartCard title="Top Performers" icon={Trophy} onViewData={() => open("team_performance", "Deals by owner")}>
+          {data.team_performance.length === 0 && <p className="text-sm text-slate-400">No owned deals in this period.</p>}
+          <ul className="space-y-2.5">
+            {data.team_performance.map((p: any) => {
+              const [first, ...rest] = String(p.name).split(" ");
+              return (
+                <li key={p.user_id} className="flex items-center gap-3 text-sm">
+                  <Avatar first={first} last={rest.join(" ")} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium">{p.name}</p>
+                    <p className="text-xs text-slate-400">
+                      {p.won_count} won · {p.open_count} open
+                    </p>
+                  </div>
+                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">{formatMoney(p.won_value)}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </ChartCard>
+      ),
+    },
+  };
 
   return (
     <div className="space-y-6">
@@ -298,88 +380,29 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* An insurance workspace opens on its book.
-          Left in the shipped order these six deal KPIs read ₹0, 0, 0, 0, 0, 0 for an
-          agency that sells policies, and the figures they came for — premium, renewals
-          due, birthdays to wish — sat seven sections down the page. A general CRM keeps
-          exactly the dashboard it had. */}
-      {hasPolicies ? (
-        <>
-          {insuranceBook}
-
-          <div className="flex items-center gap-3 pt-2">
-            <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-              Pipeline and activity
-            </h2>
-            <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
-          </div>
-
-          {dealKpis}
-          {dealCharts}
-        </>
-      ) : (
-        <>
-          {dealKpis}
-          {dealCharts}
-          <BirthdayPanel compact />
-        </>
-      )}
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <ChartCard title="Upcoming Meetings" icon={CalendarClock} onViewData={() => open("upcoming_meetings", "Meetings in period")}>
-          {data.upcoming_meetings.length === 0 && <p className="text-sm text-slate-400">No meetings in this period.</p>}
-          <ul className="space-y-2.5">
-            {data.upcoming_meetings.map((m: any) => (
-              <li key={m.id} className="rounded-lg border border-slate-100 p-2.5 text-sm dark:border-slate-800">
-                <p className="font-medium">{m.title}</p>
-                <p className="text-xs text-slate-400">
-                  {formatDateTime(m.starts_at)}
-                  {m.location ? ` · ${m.location}` : ""}
-                </p>
-              </li>
-            ))}
-          </ul>
-        </ChartCard>
-
-        <ChartCard title="Recent Activity" icon={CheckSquare} onViewData={() => open("recent_activities", "Activities in period")}>
-          {data.recent_activities.length === 0 && <p className="text-sm text-slate-400">No activity in this period.</p>}
-          <ul className="space-y-2.5">
-            {data.recent_activities.map((a: any) => (
-              <li key={a.id} className="flex items-start gap-2 text-sm">
-                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary-500" />
-                <div className="min-w-0">
-                  <p className="truncate">{a.title}</p>
-                  <p className="text-xs text-slate-400">
-                    {a.user ? `${a.user} · ` : ""}
-                    {timeAgo(a.created_at)}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </ChartCard>
-
-        <ChartCard title="Top Performers" icon={Trophy} onViewData={() => open("team_performance", "Deals by owner")}>
-          {data.team_performance.length === 0 && <p className="text-sm text-slate-400">No owned deals in this period.</p>}
-          <ul className="space-y-2.5">
-            {data.team_performance.map((p: any) => {
-              const [first, ...rest] = String(p.name).split(" ");
-              return (
-                <li key={p.user_id} className="flex items-center gap-3 text-sm">
-                  <Avatar first={first} last={rest.join(" ")} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{p.name}</p>
-                    <p className="text-xs text-slate-400">
-                      {p.won_count} won · {p.open_count} open
-                    </p>
-                  </div>
-                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">{formatMoney(p.won_value)}</span>
-                </li>
-              );
-            })}
-          </ul>
-        </ChartCard>
+      {/* A full-width card spans both columns; everything else flows two abreast.
+          One grid rather than a sequence of hand-placed rows, because the order is
+          not known here any more. */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        {layout.map((widget) => {
+          const built = WIDGETS[widget.key];
+          if (!built) return null; // a card the server knows about and this build does not
+          return (
+            <div key={widget.key} className={built.full ? "xl:col-span-2" : ""}>
+              {built.node}
+            </div>
+          );
+        })}
       </div>
+
+      {layout.length === 0 && (
+        <div className="card p-10 text-center">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Every card is switched off for this workspace. Turn some back on in
+            Settings → Dashboard.
+          </p>
+        </div>
+      )}
 
       <DrilldownModal target={drilldown} start={start} end={end} onClose={() => setDrilldown(null)} />
     </div>

@@ -129,6 +129,50 @@ def test_the_saved_order_is_the_order_served(client, alpha):
         client.put(f"{API}/dashboard-widgets", json=original, headers=alpha.auth())
 
 
+def test_a_layout_saved_in_the_first_shape_still_reads(client, alpha):
+    """The stored shape changed from a bare list to an object under a `widgets` key.
+
+    A workspace whose layout was saved before that change holds the old shape, and a
+    reader that knows only the new one raises `AttributeError` and takes the whole
+    dashboard down with a 500 — which is exactly what happened, on a real workspace,
+    the moment the two shapes met. Both are read; a save normalises.
+    """
+    from sqlalchemy import select
+
+    from app.database.session import SessionLocal
+    from app.core.tenancy import tenant_scope
+    from app.reports.widgets import DASHBOARD_SETTING
+    from app.settings.models import Setting
+
+    legacy = [{"key": "recent_activity", "enabled": True, "order": 1},
+              {"key": "birthdays", "enabled": False, "order": 2}]
+    with SessionLocal() as db, tenant_scope(alpha.tenant_id):
+        row = db.scalar(select(Setting).where(Setting.key == DASHBOARD_SETTING))
+        original = row.value if row else None
+        if row is None:
+            row = Setting(key=DASHBOARD_SETTING, value=legacy)
+            db.add(row)
+        else:
+            row.value = legacy          # the bare list, as the first version wrote it
+        db.commit()
+
+    try:
+        resp = client.get(f"{API}/dashboard-widgets", headers=alpha.auth())
+        assert resp.status_code == 200, resp.text
+        keys = [w["key"] for w in resp.json()]
+        assert "recent_activity" in keys
+        assert "birthdays" not in keys, "the old shape was read but its choices ignored"
+    finally:
+        with SessionLocal() as db, tenant_scope(alpha.tenant_id):
+            row = db.scalar(select(Setting).where(Setting.key == DASHBOARD_SETTING))
+            if row is not None:
+                if original is None:
+                    db.delete(row)
+                else:
+                    row.value = original
+                db.commit()
+
+
 def test_an_unknown_card_is_refused_by_name(client, alpha):
     resp = client.put(
         f"{API}/dashboard-widgets",

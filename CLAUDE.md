@@ -457,11 +457,21 @@ cards in order and the page renders the list it is given.
   `backfill_new_modules()`, without which a new card would arrive switched off
   everywhere and nobody would ever see it. Naming *nothing* is unconfigured either
   way, and still gets everything.
+- The insurance cards (`premium_written`, `book_by_insurer`, `commission_due`,
+  `cross_sell`, `loan_payouts`) read `/reports/insurance/*` and are what the
+  deal-centric charts were standing in for. Those charts are not merely unhelpful in
+  an agency — they are **wrong**: "revenue over time" reads won *deal* value, so a
+  book worth ₹90k in premium showed ₹0. The insurance template switches the deal
+  cards off rather than the catalog dropping them, so an agency that does start
+  running an enquiry pipeline can put them back from Settings.
 - Provisioning calls `materialise()` and writes the whole picture into the
   `dashboard_widgets` setting. A settings row rather than a table because nothing
   points at a widget, unlike `tenant_modules` which permissions and routes join to.
   It is stored under a `widgets` key inside that row: `SettingOut.value` is typed
-  `dict`, so a bare list breaks `GET /settings` for every other row.
+  `dict`, so a bare list breaks `GET /settings` for every other row. **`_stored()`
+  reads both shapes** — the first version wrote a bare list, and a workspace saved in
+  that window otherwise 500s the entire dashboard on an `AttributeError`. A save
+  normalises it.
 - Edited in two places, both the same two-column board: **Settings → Dashboard** for
   one workspace, and the **Dashboard tab** of a template in the console for every
   workspace made from it afterwards.

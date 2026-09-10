@@ -1,7 +1,7 @@
 {
   "key": "insurance_agent",
   "name": "Insurance Agent",
-  "version": 8,
+  "version": 9,
   "description": "For an insurance agent or agency: customers instead of contacts, an enquiry-to-policy pipeline, insurer and bank masters, and renewal-focused reporting. Policies, Poster Studio and Loans arrive in later phases.",
   "modules": [
     {
@@ -644,54 +644,79 @@
       "order": 3
     },
     {
-      "key": "deal_kpis",
+      "key": "premium_written",
       "enabled": true,
       "order": 4
     },
     {
-      "key": "revenue_series",
+      "key": "book_by_insurer",
       "enabled": true,
       "order": 5
     },
     {
-      "key": "lead_conversion",
+      "key": "commission_due",
       "enabled": true,
       "order": 6
     },
     {
-      "key": "pipeline_by_stage",
+      "key": "cross_sell",
       "enabled": true,
       "order": 7
     },
     {
-      "key": "lead_sources",
+      "key": "loan_payouts",
       "enabled": true,
       "order": 8
     },
     {
-      "key": "win_rate",
-      "enabled": false,
-      "order": 9
-    },
-    {
       "key": "tasks_overview",
       "enabled": true,
-      "order": 10
+      "order": 9
     },
     {
       "key": "upcoming_meetings",
       "enabled": true,
-      "order": 11
+      "order": 10
     },
     {
       "key": "recent_activity",
       "enabled": true,
+      "order": 11
+    },
+    {
+      "key": "deal_kpis",
+      "enabled": false,
       "order": 12
     },
     {
-      "key": "team_performance",
-      "enabled": true,
+      "key": "revenue_series",
+      "enabled": false,
       "order": 13
+    },
+    {
+      "key": "lead_conversion",
+      "enabled": false,
+      "order": 14
+    },
+    {
+      "key": "pipeline_by_stage",
+      "enabled": false,
+      "order": 15
+    },
+    {
+      "key": "lead_sources",
+      "enabled": false,
+      "order": 16
+    },
+    {
+      "key": "win_rate",
+      "enabled": false,
+      "order": 17
+    },
+    {
+      "key": "team_performance",
+      "enabled": false,
+      "order": 18
     }
   ]
 }

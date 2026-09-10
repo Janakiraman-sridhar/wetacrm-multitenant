@@ -16,6 +16,9 @@ import { api } from "@/lib/api";
 import { formatDate, formatDateTime, formatMoney, timeAgo } from "@/lib/format";
 import { BirthdayPanel } from "@/components/BirthdayPanel";
 import { InsuranceKpis } from "@/components/InsuranceKpis";
+import {
+  BookByInsurer, CommissionDue, CrossSell, LoanPayouts, PremiumWritten,
+} from "@/components/InsurancePanels";
 import { RenewalPanel } from "@/components/RenewalPanel";
 import { useDashboardLayout } from "@/lib/dashboard";
 
@@ -133,6 +136,11 @@ export default function Dashboard() {
    */
   const WIDGETS: Record<string, { full?: boolean; node: React.ReactNode }> = {
     insurance_book: { full: true, node: <InsuranceKpis /> },
+    premium_written: { node: <PremiumWritten /> },
+    book_by_insurer: { node: <BookByInsurer /> },
+    commission_due: { node: <CommissionDue /> },
+    cross_sell: { node: <CrossSell /> },
+    loan_payouts: { node: <LoanPayouts /> },
     renewals_due: { full: false, node: <RenewalPanel compact /> },
     birthdays: { full: false, node: <BirthdayPanel compact /> },
     deal_kpis: {

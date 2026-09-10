@@ -61,56 +61,88 @@ WIDGET_CATALOG: list[WidgetDef] = [
         "Customers with a birthday today, this week or this month.",
         3, requires="contacts",
     ),
+    # --- what an agency reviews, from /reports/insurance ----------------------
+    # These are not "extra" cards; they are the ones the deal-centric charts below
+    # were standing in for. "Revenue over time" reads won deal value, so for an
+    # agency whose money is premium it showed zero for a book worth lakhs.
+    WidgetDef(
+        "premium_written", "Premium written",
+        "New against renewal premium, month by month — growth and retention in one.",
+        4, requires="policies",
+    ),
+    WidgetDef(
+        "book_by_insurer", "Book by insurer",
+        "Which insurers the book sits with, by premium.",
+        5, requires="policies",
+    ),
+    WidgetDef(
+        "commission_due", "Commission",
+        "Earned against received, and the policies whose commission was never "
+        "filled in — money the agency has not billed for.",
+        6, requires="policies",
+    ),
+    WidgetDef(
+        "cross_sell", "Cross-sell",
+        "Customers holding one product line and missing another, and those with no "
+        "policy at all. The cheapest business an agency has.",
+        7, requires="policies",
+    ),
+    WidgetDef(
+        "loan_payouts", "Loan payouts",
+        "Loan cases by lender, and what is still owed on the disbursed ones.",
+        8, requires="loans",
+    ),
+
     WidgetDef(
         "deal_kpis", "Sales figures",
         "Revenue won, active leads, open and won deals, tasks due and meetings "
         "in the period.",
-        4, requires="deals", width="full",
+        9, requires="deals", width="full",
     ),
     WidgetDef(
         "revenue_series", "Revenue over time",
         "Won deal value by month across the selected period.",
-        5, requires="deals",
+        10, requires="deals",
     ),
     WidgetDef(
         "lead_conversion", "Lead conversion",
         "Leads created against leads converted, over time.",
-        6, requires="leads",
+        11, requires="leads",
     ),
     WidgetDef(
         "pipeline_by_stage", "Open pipeline by stage",
         "Where open deal value is sitting right now.",
-        7, requires="deals",
+        12, requires="deals",
     ),
     WidgetDef(
         "lead_sources", "Lead sources",
         "Which sources the period's leads came from.",
-        8, requires="leads",
+        13, requires="leads",
     ),
     WidgetDef(
         "win_rate", "Win rate",
         "Won against lost, for deals closed in the period.",
-        9, requires="deals",
+        14, requires="deals",
     ),
     WidgetDef(
         "tasks_overview", "Tasks overview",
         "Tasks by status for the period.",
-        10, requires="tasks",
+        15, requires="tasks",
     ),
     WidgetDef(
         "upcoming_meetings", "Upcoming meetings",
         "What is in the calendar for the period.",
-        11, requires="calendar",
+        16, requires="calendar",
     ),
     WidgetDef(
         "recent_activity", "Recent activity",
         "The latest entries from the activity timeline across the workspace.",
-        12,
+        17,
     ),
     WidgetDef(
         "team_performance", "Top performers",
         "Deals won by owner, for the period.",
-        13, requires="deals",
+        18, requires="deals",
     ),
 ]
 

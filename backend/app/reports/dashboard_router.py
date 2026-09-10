@@ -39,8 +39,20 @@ def _enabled_modules(db: Session) -> set[str]:
 
 
 def _stored(db: Session) -> list[dict] | None:
+    """This workspace's saved layout, whichever shape it was written in.
+
+    The first version stored a bare list; it is now an object, because
+    `SettingOut.value` is typed `dict` and a list breaks `GET /settings` for every
+    other row. A workspace whose layout was saved in between holds the old shape,
+    and a reader that knows only the new one crashes the whole dashboard with an
+    AttributeError. Both are read; the next save writes the current shape.
+    """
     row = db.scalar(select(Setting).where(Setting.key == DASHBOARD_SETTING))
-    stored = (row.value or {}).get(widgets.DASHBOARD_KEY) if row else None
+    if row is None:
+        return None
+    if isinstance(row.value, list):
+        return row.value
+    stored = (row.value or {}).get(widgets.DASHBOARD_KEY)
     return stored if isinstance(stored, list) else None
 
 
@@ -92,7 +104,9 @@ def save_dashboard(
     if row is None:
         db.add(Setting(key=DASHBOARD_SETTING, value={widgets.DASHBOARD_KEY: stored}))
     else:
-        row.value = {**(row.value or {}), widgets.DASHBOARD_KEY: stored}
+        # A row still in the old bare-list shape is normalised by this write.
+        existing = row.value if isinstance(row.value, dict) else {}
+        row.value = {**existing, widgets.DASHBOARD_KEY: stored}
     audit(db, user.id, "update", "setting", DASHBOARD_SETTING,
           {"enabled": [w["key"] for w in stored if w["enabled"]]})
     db.commit()

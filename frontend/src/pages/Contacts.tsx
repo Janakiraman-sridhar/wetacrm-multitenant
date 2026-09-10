@@ -319,15 +319,20 @@ export default function Contacts() {
       after: (values) => <CompanyPreview companyId={values.company_id} />,
     },
     { name: "alt_mobile", label: "Alternate mobile", section: "Work & other contacts" },
-    { name: "phone_primary", label: "Phone (primary)", section: "Work & other contacts" },
-    { name: "phone_secondary", label: "Phone (secondary)", section: "Work & other contacts" },
+    // Both write the `phones` array, so a workspace that only wants Mobile can
+    // switch the pair off in Settings → Fields by hiding Phones.
+    { name: "phone_primary", label: "Phone (primary)", schemaKey: "phones",
+      section: "Work & other contacts" },
+    { name: "phone_secondary", label: "Phone (secondary)", schemaKey: "phones",
+      section: "Work & other contacts" },
     { name: "email_secondary", label: "Email (secondary)", type: "email",
       section: "Work & other contacts" },
     { name: "alt_email", label: "Alternate email", type: "email",
       section: "Work & other contacts" },
-    { name: "linkedin", label: "LinkedIn", section: "Work & other contacts",
-      placeholder: "https://linkedin.com/in/…" },
-    { name: "twitter", label: "X / Twitter", section: "Work & other contacts" },
+    { name: "linkedin", label: "LinkedIn", schemaKey: "social_links",
+      section: "Work & other contacts", placeholder: "https://linkedin.com/in/…" },
+    { name: "twitter", label: "X / Twitter", schemaKey: "social_links",
+      section: "Work & other contacts" },
 
     // --- customer details ---------------------------------------------------
     { name: "date_of_birth", label: "Date of birth", type: "date", section: "Customer details" },

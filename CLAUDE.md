@@ -243,6 +243,18 @@ never conceals something silently. Sections group by **name**, not by adjacency:
 custom fields are appended after the page's own, so a workspace with a custom KYC
 field used to get two "KYC" headers with the whole form between them.
 
+**A form field can name the column it writes.** `FieldDef.schemaKey` exists because
+`phone_primary`/`phone_secondary` both write the `phones` array and `linkedin`/
+`twitter` both write `social_links` — so a tenant hiding "Phones" in Settings →
+Fields reached neither, and a workspace that captures a Mobile could not switch the
+duplicate Phone pair off. It governs **hiding only**: a relabel stays keyed on the
+form name, or two fields sharing a column both take that column's caption, which
+turns one duplicate into another.
+
+Data in a hidden field is not lost. `toForm` and `toApi` run whether or not the
+input renders, so a workspace that hides Phones keeps the numbers it already had —
+checked by seeding one and saving from the UI.
+
 `_INTERNAL_COLUMNS` in `schema_registry.py` keeps storage out of the field list.
 A blind index and a ciphertext are how a PAN is *stored* — the field is `pan`, and
 the page supplies it. Offering them meant Settings → Fields listed six entries

@@ -36,6 +36,19 @@ export interface FieldDef {
   colSpan?: 1 | 2;
   step?: string;
   section?: string; // fields with the same section render under one header
+  /**
+   * The schema column this field edits, when the form name differs.
+   *
+   * `phone_primary` and `phone_secondary` both write the `phones` array, and
+   * `linkedin`/`twitter` both write `social_links`. Without this the tenant's
+   * "hide this field" in Settings → Fields silently reaches neither, because the
+   * overlay matches on the form name — so a workspace that captures a Mobile and
+   * has no use for a separate Phone could not switch the duplicate off.
+   *
+   * Hiding only. A relabel stays keyed on the form name, or the two fields sharing
+   * a column would both take that column's caption.
+   */
+  schemaKey?: string;
   /** Rendered full-width below this field, fed the live form values (e.g. a linked-record preview). */
   after?: (values: Record<string, any>) => React.ReactNode;
   /**
@@ -616,7 +629,13 @@ export function CrudPage<T extends { id: string }>({
 
   const effectiveFields = useMemo(
     () => [
-      ...fields.filter((f) => !overlay.hidden.has(f.name)).map((f) => relabel(f.name, f)),
+      // `schemaKey` decides only whether the field is hidden. Relabelling still
+      // keys on the form name: LinkedIn and X both write `social_links`, and
+      // applying that column's label to each turned two distinct inputs into two
+      // boxes both captioned "Social links".
+      ...fields
+        .filter((f) => !overlay.hidden.has(f.schemaKey ?? f.name))
+        .map((f) => relabel(f.name, f)),
       ...overlay.customFields,
     ],
     [fields, overlay]
